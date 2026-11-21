@@ -48,9 +48,9 @@ function sampleState() {
     day: t,
     baby: 'Henry',
     people: [
-      { id: 'mom', name: 'Mom', admin: true },
-      { id: 'dad', name: 'Dad', admin: false },
-      { id: 'nan', name: 'Nan', admin: false, role: 'Nanny' },
+      { id: 'mom', name: 'Mom', admin: true, core: true },
+      { id: 'dad', name: 'Dad', admin: false, core: true },
+      { id: 'nan', name: 'Nan', admin: false, role: 'Nanny', core: false },
     ],
     me: 'mom',
     blocks,
@@ -126,7 +126,10 @@ function isAway(id, date = today(), m = nowMin()) { return awayAt(date, m).inclu
 // Who is on duty at minute m: people in confirmed shifts, minus anyone marked "Not available"
 function scheduledAt(date, m) { return [...new Set(blocksOn(date).filter(b => b.start <= m && m < b.end).flatMap(b => b.people))].filter(person); }
 function onDutyAt(m, date = today()) { const out = awayAt(date, m); return scheduledAt(date, m).filter(id => !out.includes(id)); }
-const available = (date = today(), m = nowMin()) => allIds().filter(id => !isAway(id, date, m));
+const coreIds = () => S.people.filter(p => p.core).map(p => p.id);
+// Who Pip falls back to when no one is scheduled: the main caregivers (parents) who aren't marked "Not".
+// Helpers like a nanny are only alerted when they're scheduled.
+const available = (date = today(), m = nowMin()) => coreIds().filter(id => !isAway(id, date, m));
 
 // Pattern recognition: if the same person covered the same time slot on 2+ of the
 // last 7 days (weekdays matched with weekdays, weekends with weekends), suggest it
@@ -205,7 +208,7 @@ function render() {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   renderBanner();
   const el = $('#screen');
-  const keepScroll = $('#tl') ? $('#tl').scrollTop : null;
+  const keepScroll = $('#tl') ? $('#tl').scrollTop : $('#wkBody') ? $('#wkBody').scrollTop : null;
   if (tab === 'home') el.innerHTML = homeHTML();
   if (tab === 'schedule') { el.innerHTML = scheduleHTML(); wireSchedule(keepScroll); }
   if (tab === 'team') el.innerHTML = teamHTML();
@@ -243,10 +246,10 @@ function dutyCard() {
   if (!sh.people.length) {
     const who = available();
     head = 'No one on duty';
-    sub = `Alerts go to ${who.length === allIds().length ? 'everyone' : `everyone who's free (${namesOf(who)})`} until someone is scheduled.`;
+    sub = `Alerts go to ${who.length ? namesOf(who) : 'everyone'} until someone is scheduled.`;
     const scheduled = scheduledAt(t, m);
     if (scheduled.length && outNow.length) {
-      extra = `<div style="margin-top:10px">${who.map(id => `<button class="chip" style="min-height:40px;margin:0 6px 6px 0" data-act="cover" data-p="${id}">Ask ${esc(id === S.me ? 'me' : nameOf(id))} to cover</button>`).join('')}</div>`;
+      extra = `<div style="margin-top:10px">${allIds().filter(id => !isAway(id)).map(id => `<button class="chip" style="min-height:40px;margin:0 6px 6px 0" data-act="cover" data-p="${id}">Ask ${esc(id === S.me ? 'me' : nameOf(id))} to cover</button>`).join('')}</div>`;
     }
   } else {
     mine = sh.people.includes(S.me);
@@ -388,7 +391,7 @@ function dayHTML() {
 }
 
 function wireSchedule(keepScroll) {
-  if (weekView) return wireWeek();
+  if (weekView) return wireWeek(keepScroll);
   const grid = $('#grid');
   if (!grid) return;
   const tl = $('#tl');
@@ -489,42 +492,56 @@ function cellInfo(date, a, z) {
   const sugg = who.length ? null : suggestionsOn(date).find(s => s.start < z && a < s.end);
   return { who, outs, sugg, partial };
 }
+const WPX = 30 / 60; // week view: 30 px per hour
 function weekHTML() {
   const days = Array.from({ length: 7 }, (_, i) => addDays(viewWeek, i));
   const t = today();
   const allSugg = days.flatMap(d => suggestionsOn(d));
-  let h = `<div class="muted small">Tap a box to choose who's on duty, or who <b>can't</b>. <b>Faded boxes</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
-    <div class="week">
-      <div></div>${days.map(d => `<div class="wh${d === t ? ' today' : ''}" data-act="goday" data-date="${d}">${shortDay(d)[0]}${shortDay(d)[1]}<br><span>${new Date(d + 'T12:00:00').getDate()}</span></div>`).join('')}`;
-  PERIODS.forEach(([label, a, z]) => {
-    h += `<div class="h">${label}<br><span>${fmtMin(a).replace(' ', '')}</span></div>`;
-    days.forEach(d => {
-      const c = cellInfo(d, a, z), past = dayDiff(t, d) < 0;
-      const outTxt = c.outs.length ? `<i>✕${c.outs.map(id => esc(nameOf(id)[0])).join('')}</i>` : '';
-      const key = `${d}|${a}`;
-      if (c.who.length) h += `<button class="wc ${c.who.length > 1 ? 'p-multi' : pClass(c.who[0])}${past ? ' past' : ''}" data-cell="${key}">${c.who.map(id => esc(nameOf(id)[0])).join('+')}${outTxt}</button>`;
-      else if (c.sugg) h += `<button class="wc sugg" data-cell="${key}" data-sugg="${esc(c.sugg.id)}">${c.sugg.people.map(id => esc(nameOf(id)[0])).join('+')}?${outTxt}</button>`;
-      else h += `<button class="wc open${past ? ' past' : ''}" data-cell="${key}">${c.partial ? 'part' : 'open'}${outTxt}</button>`;
-    });
-  });
-  h += `</div>
-    <p class="muted small">M = Mom, D = Dad, N = Nan. M+D = both on duty. ✕M = Mom can't for part of that time. "Open" = no one assigned, so alerts go to everyone who's free.</p>
+  const H = 1440 * WPX;
+  let h = `<div class="muted small">Tap an empty time to add a shift, or tap a shift to change it. On upcoming days, <b>faded shifts</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
+    <div class="wk" id="wk">
+      <div class="wk-head"><div></div>${days.map(d => `<button class="wh${d === t ? ' today' : ''}" data-act="goday" data-date="${d}">${shortDay(d)}<br><b>${new Date(d + 'T12:00:00').getDate()}</b></button>`).join('')}</div>
+      <div class="wk-body" id="wkBody">
+        <div class="wk-hours">${Array.from({ length: 24 }, (_, i) => `<div style="height:${60 * WPX}px">${i % 3 === 0 ? fmtMin(i * 60).replace(' ', '') : ''}</div>`).join('')}</div>
+        ${days.map(d => {
+          const bs = [...blocksOn(d), ...suggestionsOn(d)];
+          const pos = layoutCols(bs);
+          return `<div class="wk-col${dayDiff(t, d) < 0 ? ' past' : ''}" data-date="${d}" style="height:${H}px">
+            ${bs.map(b => { const p = pos.get(b.id), w = 100 / p.n;
+              return `<div class="wb ${blockClass(b)}" data-id="${esc(b.id)}" style="top:${b.start * WPX}px;height:${Math.max(10, (b.end - b.start) * WPX)}px;left:calc(${p.col * w}% + 1px);width:calc(${w}% - 2px)">${b.people.map(id => esc(nameOf(id)[0])).join('+')}${b.sugg ? '?' : ''}</div>`; }).join('')}
+            ${awayOn(d).map(a => `<div class="wa" style="top:${a.start * WPX}px;height:${(a.end - a.start) * WPX}px" title="Not ${esc(nameOf(a.person))}">✕${esc(nameOf(a.person)[0])}</div>`).join('')}
+            ${d === t ? `<div class="nowline" style="top:${nowMin() * WPX}px"></div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    <p class="muted small">M = Mom, D = Dad, N = Nan, M+D = both on duty. ✕M = Mom can't then. Blank time = no one assigned, so alerts go to ${esc(namesOf(coreIds()).replace(" + ", " and "))}.</p>
     ${allSugg.length ? `<button class="btn quiet tool" data-act="accept-week">✓ Confirm all ${allSugg.length} faded shifts this week</button>` : ''}
     <button class="btn quiet tool" data-act="repeat-week" style="margin-top:8px">↻ Copy this week to next week</button>`;
   return h;
 }
-function wireWeek() {
-  document.querySelectorAll('.wc').forEach(el => el.addEventListener('click', () => {
-    const [date, a] = el.dataset.cell.split('|');
-    const P = PERIODS.find(p => p[1] === +a);
-    if (el.dataset.sugg) {
-      return tapOrDouble(el.dataset.cell, () => openCell(date, P), () => {
-        suggestionsOn(date).filter(s => s.start < P[2] && P[1] < s.end).forEach(confirmSugg);
-        save(); render(); toast(`Confirmed ${shortDay(date)} ${P[0].toLowerCase()}.`);
-      });
+function wireWeek(keepScroll) {
+  const body = $('#wkBody'); if (!body) return;
+  requestAnimationFrame(() => { body.scrollTop = keepScroll != null ? keepScroll : 6 * 60 * WPX; });
+  body.addEventListener('click', e => {
+    const wb = e.target.closest('.wb'), col = e.target.closest('.wk-col');
+    if (!col) return;
+    const date = col.dataset.date;
+    if (wb) {
+      const id = wb.dataset.id;
+      if (wb.classList.contains('sugg')) {
+        return tapOrDouble(id, () => toast('Double-tap a faded shift to confirm it.'), () => {
+          const s = findSugg(id); if (!s) return;
+          confirmSugg(s); save(); render(); toast(`Confirmed: ${namesOf(s.people)}, ${shortDay(date)} ${fmtMin(s.start)} to ${fmtEnd(s.end)}.`);
+        });
+      }
+      return openBlock(id);
     }
-    openCell(date, P);
-  }));
+    const y = e.clientY - col.getBoundingClientRect().top;
+    const a = Math.floor(y / WPX / 60) * 60;
+    viewDay = date;
+    newShift(a, Math.min(1440, a + 60));
+  });
 }
 let cellDraft = null;
 function openCell(date, P) {
@@ -561,7 +578,7 @@ function openAway(date) {
   const list = awayOn(date);
   sheet(`<h2>Who can't be on duty?</h2>
     <p class="muted" style="margin-top:0">${esc(dayLabel(date))}. Pip won't alert them then, and passes alerts to whoever is free.</p>
-    <div class="picks">${S.people.map(p => `<button data-act="away-who" data-p="${p.id}" class="not ${d.who.includes(p.id) ? 'on' : ''}">Not ${esc(p.name)}</button>`).join('')}</div>
+    <div class="picks">${S.people.filter(p => p.core).map(p => `<button data-act="away-who" data-p="${p.id}" class="not ${d.who.includes(p.id) ? 'on' : ''}">Not ${esc(p.name)}</button>`).join('')}</div>
     <div class="label">When</div>
     <div class="picks">${quick.map(([l, v]) => `<button data-act="away-quick" data-v="${Array.isArray(v) ? v.join(',') : v}">${l}</button>`).join('')}</div>
     <div class="row"><span>From <b>${fmtMin(d.start)}</b></span><span>${step('start', -SNAP)} ${step('start', SNAP)}</span></div>
@@ -576,11 +593,12 @@ function openAway(date) {
 function teamHTML() {
   const colors = ['#dfe3f6', '#d6ebff', '#efe7e1', '#e8f0e4', '#f6e8ef'];
   return `<div class="top"><h1>Team</h1></div>
-    <p class="muted" style="margin-top:0">Backup order: if the person on duty can't come, Pip asks the next person down the list.</p>
+    <p class="muted" style="margin-top:0">Backup order: if the person on duty can't come, Pip asks the next person down the list. Helpers are only asked when they're scheduled.</p>
     <div class="card">${S.people.map((p, i) => `<div class="person">
       <div class="av" style="background:${colors[i % colors.length]}">${esc(p.name[0] || '?')}</div>
       <div class="grow"><div class="mid" style="font-size:17px">${i + 1}. ${esc(p.name)}${p.id === S.me ? ' (you)' : ''}</div>
-      <div class="muted small">${p.admin ? 'Admin' : p.role ? esc(p.role) : 'Caregiver'}${isAway(p.id) ? ' · not available now' : ''}</div></div>
+      <div class="muted small">${p.admin ? 'Admin · ' : ''}${p.core ? 'Main caregiver' : `${p.role ? esc(p.role) + ', ' : ''}helper, alerted only when scheduled`}${isAway(p.id) ? ' · not available now' : ''}</div>
+      <button class="link small" data-act="core" data-p="${p.id}" style="padding-left:0;min-height:36px">${p.core ? 'Make helper' : 'Make main caregiver'}</button></div>
       <div class="ord"><button data-act="up" data-p="${p.id}" aria-label="Move up">↑</button><button data-act="down" data-p="${p.id}" aria-label="Move down">↓</button>
       ${p.admin ? '' : `<button data-act="remove" data-p="${p.id}" aria-label="Remove">✕</button>`}</div></div>`).join('')}</div>
     <div class="card"><div class="label">Invite a caregiver</div>
@@ -640,13 +658,13 @@ function simulate(kind) {
 function triggerAlert() {
   const duty = onDutyAt(nowMin());
   const free = available();
-  const to = duty.length ? duty : (free.length ? free : allIds());
+  const to = duty.length ? duty : (free.length ? free : coreIds());
   S.alert = { detectedAt: Date.now(), firstTo: to.slice(), to: to.slice(), tried: to.slice(), everyone: !duty.length, from: null, deadline: Date.now() + handoffSec() * 1000 };
   S.pip.led = true;
   S.log.push({ t: Date.now(), ev: 'soiled', to: namesOf(to) });
   save(); render();
 }
-function nextInLine(a) { return allIds().find(id => !a.tried.includes(id) && !isAway(id)); }
+function nextInLine(a) { const m = nowMin(); return allIds().find(id => !a.tried.includes(id) && !isAway(id) && (person(id).core || scheduledAt(today(), m).includes(id))); }
 function passOn(reason, byId) {
   const a = S.alert; if (!a) return;
   if (reason === 'cant' && a.to.length > 1) {
@@ -656,7 +674,7 @@ function passOn(reason, byId) {
   a.from = { names: namesOf(a.to), reason };
   const next = nextInLine(a);
   if (next && !a.everyone) { a.to = [next]; a.tried.push(next); }
-  else { const free = available().filter(id => id !== byId); a.to = free.length ? free : allIds(); a.everyone = true; }
+  else { const free = available().filter(id => id !== byId); a.to = free.length ? free : coreIds(); a.everyone = true; }
   a.deadline = Date.now() + handoffSec() * 1000;
   S.log.push({ t: Date.now(), ev: 'handoff', from: a.from.names, to: namesOf(a.to), reason });
   save(); render();
@@ -825,6 +843,7 @@ document.addEventListener('click', e => {
       setRange(td, Math.floor(m / SNAP) * SNAP, Math.min(...ends), [p]);
       save(); render(); toast(`${nameOf(p)} is covering now.`); break;
     }
+    case 'core': { const pp = person(t.dataset.p); pp.core = !pp.core; save(); render(); break; }
     case 'up': case 'down': {
       const i = S.people.findIndex(p => p.id === t.dataset.p), j = act === 'up' ? i - 1 : i + 1;
       if (j >= 0 && j < S.people.length) { [S.people[i], S.people[j]] = [S.people[j], S.people[i]]; save(); render(); }
@@ -842,7 +861,7 @@ document.addEventListener('click', e => {
     case 'invite': {
       const n = $('#newName').value.trim();
       if (!n) { toast('Type a name first.'); break; }
-      S.people.push({ id: uid(), name: n.slice(0, 20), admin: false }); save(); render(); toast(`${n} added to the team.`); break;
+      S.people.push({ id: uid(), name: n.slice(0, 20), admin: false, core: false }); save(); render(); toast(`${n} added to the team.`); break;
     }
     case 'set-cal': {
       const v = t.dataset.v, src = v === 'google' ? 'Google Calendar' : 'Apple Calendar';
