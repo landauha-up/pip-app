@@ -693,7 +693,7 @@ function renderAlert() {
     <div class="icon" aria-hidden="true"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
     <h1>Time for a change</h1>
     <div class="sub">${esc(S.baby)}'s diaper is soiled</div>
-    <div class="muted" style="color:inherit;opacity:.75">detected ${ago(a.detectedAt)}</div>
+    <div class="muted" style="color:inherit">detected ${ago(a.detectedAt)}</div>
     <div class="chips"><span class="chip ok">${esc(chip)}</span>${why ? ` <span class="chip">${esc(why)}</span>` : ''}</div>
     <div class="spacer"></div>
     <button class="btn primary" data-act="changed">Changed</button>
