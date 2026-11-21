@@ -196,3 +196,9 @@ main{padding-bottom:130px}
 .demo-peek button{width:100%;min-height:44px;border-radius:12px;background:var(--twilight);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px}
 .demo-peek button+button{margin-top:6px}
 .demo-peek span{font-size:10px;letter-spacing:.08em;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:2px 6px}
+
+/* Demo-only: pretend another caregiver answered on their own phone (the demo stays on Dad's phone) */
+.demo-answer{margin:-4px 0 12px;background:var(--twilight);border-radius:12px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.demo-answer .lbl{grid-column:1/-1;color:#fff;font-weight:800;font-size:13px;display:flex;align-items:center;gap:8px}
+.demo-answer .lbl span{font-size:10px;letter-spacing:.08em;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:2px 6px}
+.demo-answer button{min-height:44px;border-radius:10px;background:#fff;color:var(--twilight);font-weight:800;font-size:14px}

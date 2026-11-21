@@ -3,7 +3,7 @@
    State lives only in this browser (localStorage). The Pip device is simulated with
    the "Simulate" controls; the real device link (MQTT over Wi-Fi) is not part of this build. */
 
-const KEY = 'pip-demo-v3';
+const KEY = 'pip-demo-v4';
 const FEEDBACK_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScaP8q5moJUXdaTbvfv9TCxrhUsxv41jsvfjWMHsFe-kJBadw/viewform';
 const PX_PER_MIN = 48 / 60;
 const SNAP = 15;
@@ -34,17 +34,28 @@ function sampleState() {
   const now = Date.now(), t = today();
   const blocks = [];
   const add = (date, start, end, people) => blocks.push({ id: uid(), date, start, end, people });
-  // Last 7 days of history, so Pip has a pattern to learn from
-  for (let i = -7; i <= 0; i++) {
+  // Each day of the week has its own rhythm: work, Nan's hours and bedtime handoffs
+  // start and end at different times. [start, end, people], minutes from midnight.
+  const H = (h, m = 0) => h * 60 + m;
+  const WEEK = {
+    0: [[0, H(8, 30), ['dad']], [H(8, 30), H(13), ['mom']], [H(13), H(18), ['dad']], [H(18), H(22), ['dad', 'mom']], [H(22), 1440, ['mom']]],                              // Sun
+    1: [[0, H(6, 30), ['mom']], [H(6, 30), H(12, 15), ['dad']], [H(12, 15), H(17), ['nan']], [H(18), H(21, 30), ['dad', 'mom']], [H(21, 30), 1440, ['mom']]],             // Mon
+    2: [[0, H(7), ['mom']], [H(7), H(11, 30), ['dad']], [H(11, 30), H(17), ['nan']], [H(17), H(22), ['dad', 'mom']], [H(22), 1440, ['mom']]],                               // Tue
+    3: [[0, H(7, 30), ['mom']], [H(7, 30), H(13), ['dad']], [H(13), H(18, 30), ['nan']], [H(18, 30), H(22, 30), ['dad', 'mom']], [H(22, 30), 1440, ['mom']]],              // Wed
+    4: [[0, H(6, 45), ['mom']], [H(6, 45), H(10, 30), ['dad']], [H(10, 30), H(16, 30), ['nan']], [H(16, 30), H(21), ['dad', 'mom']], [H(21), 1440, ['dad']]],            // Thu
+    5: [[0, H(7), ['mom']], [H(7), H(12), ['dad']], [H(12), H(16), ['nan']], [H(18), H(23), ['dad', 'mom']], [H(23), 1440, ['mom']]],                                    // Fri
+    6: [[0, H(8), ['mom']], [H(8), H(13, 30), ['dad']], [H(13, 30), H(19), ['mom']], [H(19), H(23), ['dad', 'mom']], [H(23), 1440, ['dad']]],                             // Sat
+  };
+  // Three weeks of history plus today, so Pip can learn each weekday's pattern
+  for (let i = -21; i <= 0; i++) {
     const d = addDays(t, i);
-    add(d, 0, 420, ['mom']);
-    add(d, 420, 720, ['dad']);
-    add(d, 720, 1020, isWeekend(d) ? ['dad'] : ['nan']);
-    add(d, 1080, 1320, ['dad', 'mom']);
-    if (i !== -4) add(d, 1320, 1440, ['mom']); // Mom usually takes late evening
+    WEEK[weekday(d)].forEach(([a, z, ppl]) => {
+      if (i === -9 && a === H(22)) return; // one night nobody wrote it down
+      add(d, a, z, ppl);
+    });
   }
   return {
-    v: 3,
+    v: 4,
     day: t,
     baby: 'Henry',
     people: [
@@ -80,7 +91,7 @@ let viewWeek = mondayOf(today());
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && s.v === 3) {
+    if (s && s.v === 4) {
       if (s.day !== today()) { s.day = today(); s.poops = []; }
       return s;
     }
@@ -131,17 +142,17 @@ const coreIds = () => S.people.filter(p => p.core).map(p => p.id);
 // Helpers like a nanny are only alerted when they're scheduled.
 const available = (date = today(), m = nowMin()) => coreIds().filter(id => !isAway(id, date, m));
 
-// Pattern recognition: if the same person covered the same time slot on 2+ of the
-// last 7 days (weekdays matched with weekdays, weekends with weekends), suggest it
-// as a faded shift on any day (today or later) where that time isn't covered yet.
+// Pattern recognition: if the same person covered the same time slot on the same
+// weekday at least 2 of the last 3 weeks (e.g. Nan on Tuesdays 11:30 to 5), suggest it
+// as a faded shift on upcoming days where that time isn't covered yet.
 const sugKey = (date, b) => `${date}|${b.start}|${b.end}|${b.people.slice().sort().join('+')}`;
 function suggestionsOn(date) {
   // Suggestions only appear for days ahead: the habit we want is planning ahead, not last-minute
   if (dayDiff(today(), date) <= 0) return [];
   const counts = new Map();
-  for (let i = 1; i <= 7; i++) {
+  for (let i = 1; i <= 21; i++) {
     const d = addDays(today(), -i);
-    if (isWeekend(d) !== isWeekend(date)) continue;
+    if (weekday(d) !== weekday(date)) continue;
     blocksOn(d).forEach(b => {
       const k = `${b.start}|${b.end}|${b.people.slice().sort().join('+')}`;
       const c = counts.get(k) || { start: b.start, end: b.end, people: b.people.slice(), days: new Set() };
@@ -230,10 +241,6 @@ function pipChip() {
   return `<span class="chip ok">Pip connected · ${S.pip.battery}%</span>`;
 }
 
-function youChips() {
-  return `<div class="label">Viewing as (demo)</div><div class="you">${S.people.map(p =>
-    `<button data-act="me" data-id="${p.id}" class="${p.id === S.me ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>`;
-}
 
 function dutyCard() {
   const sh = currentShift(), t = today(), m = nowMin();
@@ -297,7 +304,6 @@ function homeHTML() {
     2. <b>Say you can't</b> with "I can't be on duty…", for example for a last-minute meeting.<br>
     3. Tap <b>Pretend to be the Pip device</b> at the bottom and choose "Diaper is soiled", then answer the alert or pass it on with "Can't right now".<br>
     <button class="link" data-act="intro-ok" style="padding-left:0">Got it</button></div>`;
-  if (S.me !== S.people[0].id) h += `<div class="demo-peek"><button data-act="me" data-id="${S.people[0].id}"><span>DEMO ONLY</span> ◂ Back to ${esc(S.people[0].name)}'s phone</button></div>`;
   if (S.handled && S.handled.for.includes(S.me)) h += `<div class="note">✓ ${esc(S.handled.text)} <button class="link" data-act="handled-ok">OK</button></div>`;
   if (sensing && sensing.kind === 'soiled') h += `<div class="note">Pip is noticing a smell. It waits ${delaySec()} seconds to be sure before alerting anyone, so passing gas doesn't set it off.</div>`;
   h += `<div class="card status ${needs ? 'needs' : 'clean'}">
@@ -308,7 +314,8 @@ function homeHTML() {
   if (needs && !S.alert.to.includes(S.me)) {
     const who = S.alert.everyone ? 'everyone who is free' : namesOf(S.alert.to);
     h += `<div class="note">Pip is alerting <b>${esc(who)}</b>. You're not on duty, so your phone stays quiet.</div>
-      <div class="demo-peek">${S.alert.to.map(id => `<button data-act="me" data-id="${id}"><span>DEMO ONLY</span> See what ${esc(nameOf(id))}'s phone shows ▸</button>`).join('')}</div>`;
+      ${S.alert.to.map(id => `<div class="demo-answer"><div class="lbl"><span>DEMO ONLY</span> Pretend ${esc(nameOf(id))} answers on their phone:</div>
+        <button data-act="as-changed" data-id="${id}">✓ Changed</button><button data-act="as-cant" data-id="${id}">✕ Can't right now</button></div>`).join('')}`;
   }
   h += dutyCard();
   h += `<div class="card"><div class="row"><div class="label">Today's shifts</div><button class="link small" data-act="tab" data-tab="schedule">See schedule</button></div>${stripHTML()}</div>`;
@@ -620,7 +627,6 @@ function openSettings() {
     <label class="switch"><span>Apple Calendar</span><input type="checkbox" data-act="set-cal" data-v="apple" ${S.cal.apple ? 'checked' : ''}></label>
     <p class="small muted" style="margin-top:0">Prototype: turning one on adds a sample "Pip conflict" so you can see how it looks.</p>
     <div class="switch"><span><b>Night colors</b></span><div class="seg">${['auto', 'on', 'off'].map(v => `<button data-act="set-night" data-v="${v}" class="${st.night === v ? 'on' : ''}">${v === 'auto' ? 'After 9 pm' : v}</button>`).join('')}</div></div>
-    <div class="label" style="margin-top:14px">Whose phone (demo)</div>${youChips().replace(/^.*?<div class="you">/, '<div class="you">')}
     <div class="note small"><b>About this prototype.</b> Henry, Mom, Dad and Nan are a pretend family. No real baby, health or personal data is used. Everything stays on this device. The Pip device is played by the "Pretend to be the Pip device" strip.</div>
     <a class="btn secondary feedback" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Give feedback (2 min)</a>
     <button class="btn quiet" data-act="sim">Open device simulator</button>
@@ -687,12 +693,13 @@ function changed(byId) {
   S.lastChanged = t; S.poops.push(t);
   if (S.settings.tracking) S.history.push(t);
   const byName = byId ? nameOf(byId) : 'Someone';
-  if (byId && !a.firstTo.includes(byId)) S.handled = { for: a.firstTo.slice(), text: `${byName} changed ${S.baby} at ${fmtTime(t)}.` };
+  if (byId && byId !== S.me) S.handled = { for: [S.me], text: `${byName} changed ${S.baby} at ${fmtTime(t)}.` };
+  else if (byId && !a.firstTo.includes(byId)) S.handled = { for: a.firstTo.slice(), text: `${byName} changed ${S.baby} at ${fmtTime(t)}.` };
   else if (!byId) S.handled = { for: allIds(), text: `${S.baby} was changed at ${fmtTime(t)} (Pip button pressed).` };
   S.log.push({ t, ev: 'changed', by: byName, handedOff: !!a.from });
   S.alert = null; S.pip.led = false;
   save(); render();
-  toast("Changed. Pip's light is off and everyone's phone is updated.");
+  toast(byId && byId !== S.me ? `${byName} tapped Changed. Pip's light is off.` : "Changed. Pip's light is off and everyone's phone is updated.");
 }
 function falseAlarm() {
   S.log.push({ t: Date.now(), ev: 'false-alarm' });
@@ -716,7 +723,7 @@ function renderAlert() {
   const why = a.from ? `${a.from.names} ${a.from.reason === 'cant' ? "can't right now" : "didn't answer"}` : null;
   const chip = a.everyone ? (a.from ? "Everyone's alerted" : 'No one on duty, so everyone is alerted') : a.to.length > 1 ? "You're on duty together" : "You're on duty";
   el.innerHTML = `
-    <div class="clock">${fmtTime(Date.now())} · viewing as ${esc(nameOf(S.me))}</div>
+    <div class="clock">${fmtTime(Date.now())}</div>
     <div class="icon" aria-hidden="true"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
     <h1>Time for a change</h1>
     <div class="sub">${esc(S.baby)}'s diaper is soiled</div>
@@ -763,7 +770,8 @@ document.addEventListener('click', e => {
   const act = t.dataset.act, id = t.dataset.id;
   const blk = id && S.blocks.find(b => b.id === id);
   switch (act) {
-    case 'me': S.me = id; save(); render(); if (!$('#sheet').classList.contains('hidden') && $('#sheetCard h2')?.textContent === 'Settings') openSettings(); break;
+    case 'as-changed': changed(id); break;
+    case 'as-cant': passOn('cant', id); break;
     case 'tab': tab = t.dataset.tab; render(); break;
     case 'intro-ok': S.introSeen = true; save(); render(); break;
     case 'handled-ok': S.handled.for = S.handled.for.filter(x => x !== S.me); if (!S.handled.for.length) S.handled = null; save(); render(); break;
