@@ -3,7 +3,7 @@
    State lives only in this browser (localStorage). The Pip device is simulated with
    the "Simulate" controls; the real device link (MQTT over Wi-Fi) is not part of this build. */
 
-const KEY = 'pip-demo-v2';
+const KEY = 'pip-demo-v3';
 const FEEDBACK_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScaP8q5moJUXdaTbvfv9TCxrhUsxv41jsvfjWMHsFe-kJBadw/viewform';
 const PX_PER_MIN = 48 / 60;
 const SNAP = 15;
@@ -37,22 +37,22 @@ function sampleState() {
   // Last 7 days of history, so Pip has a pattern to learn from
   for (let i = -7; i <= 0; i++) {
     const d = addDays(t, i);
-    add(d, 0, 420, ['dad']);
-    add(d, 420, 720, ['mom']);
-    add(d, 720, 1020, isWeekend(d) ? ['mom'] : ['nan']);
-    add(d, 1080, 1320, ['mom', 'dad']);
-    if (i !== -4) add(d, 1320, 1440, ['dad']); // Dad usually takes late evening
+    add(d, 0, 420, ['mom']);
+    add(d, 420, 720, ['dad']);
+    add(d, 720, 1020, isWeekend(d) ? ['dad'] : ['nan']);
+    add(d, 1080, 1320, ['dad', 'mom']);
+    if (i !== -4) add(d, 1320, 1440, ['mom']); // Mom usually takes late evening
   }
   return {
-    v: 2,
+    v: 3,
     day: t,
     baby: 'Henry',
     people: [
-      { id: 'mom', name: 'Mom', admin: true, core: true },
-      { id: 'dad', name: 'Dad', admin: false, core: true },
+      { id: 'dad', name: 'Dad', admin: true, core: true },
+      { id: 'mom', name: 'Mom', admin: false, core: true },
       { id: 'nan', name: 'Nan', admin: false, role: 'Nanny', core: false },
     ],
-    me: 'mom',
+    me: 'dad',
     blocks,
     away: [],      // {id, date, start, end, person}: "Not Mom" times
     dismissed: [], // suggestion keys the family dismissed
@@ -80,7 +80,7 @@ let viewWeek = mondayOf(today());
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && s.v === 2) {
+    if (s && s.v === 3) {
       if (s.day !== today()) { s.day = today(); s.poops = []; }
       return s;
     }
@@ -292,12 +292,12 @@ function homeHTML() {
   const poopsLast = S.poops.length ? fmtTime(S.poops[S.poops.length - 1]) : null;
   let h = `<div class="top"><h1>${greeting()}, ${esc(me ? me.name : '')}</h1>
     <button class="gear" data-act="settings" aria-label="Settings">⚙</button></div>`;
-  if (!S.introSeen) h += `<div class="intro"><b>Welcome to Pip.</b> This is a prototype with a pretend family: baby Henry, Mom, Dad and Nan the nanny. Nothing here is real data.<br><br>
+  if (!S.introSeen) h += `<div class="intro"><b>Welcome to Pip.</b> This is a prototype with a pretend family: baby Henry, Dad, Mom and Nan the nanny. You're Dad. Nothing here is real data.<br><br>
     <b>Things to try:</b><br>1. <b>Plan who's on duty</b> in Schedule, by the day or the week. Upcoming days show faded shifts, Pip's guesses from past weeks: double-tap one to confirm it.<br>
     2. <b>Say you can't</b> with "I can't be on duty…", for example for a last-minute meeting.<br>
     3. Tap <b>Pretend to be the Pip device</b> at the bottom and choose "Diaper is soiled", then answer the alert or pass it on with "Can't right now".<br>
     <button class="link" data-act="intro-ok" style="padding-left:0">Got it</button></div>`;
-  if (S.me !== S.people[0].id) h += `<button class="link small" data-act="me" data-id="${S.people[0].id}" style="padding-left:0;margin-top:-8px">← Back to ${esc(S.people[0].name)}'s phone</button>`;
+  if (S.me !== S.people[0].id) h += `<div class="demo-peek"><button data-act="me" data-id="${S.people[0].id}"><span>DEMO ONLY</span> ◂ Back to ${esc(S.people[0].name)}'s phone</button></div>`;
   if (S.handled && S.handled.for.includes(S.me)) h += `<div class="note">✓ ${esc(S.handled.text)} <button class="link" data-act="handled-ok">OK</button></div>`;
   if (sensing && sensing.kind === 'soiled') h += `<div class="note">Pip is noticing a smell. It waits ${delaySec()} seconds to be sure before alerting anyone, so passing gas doesn't set it off.</div>`;
   h += `<div class="card status ${needs ? 'needs' : 'clean'}">
@@ -307,8 +307,8 @@ function homeHTML() {
     </div>`;
   if (needs && !S.alert.to.includes(S.me)) {
     const who = S.alert.everyone ? 'everyone who is free' : namesOf(S.alert.to);
-    h += `<div class="note">Pip is alerting <b>${esc(who)}</b>. You're not on duty, so your phone stays quiet.
-      <div style="margin-top:8px">${S.alert.to.map(id => `<button class="link" data-act="me" data-id="${id}" style="padding-left:0">See ${esc(nameOf(id))}'s phone →</button>`).join(' ')}</div></div>`;
+    h += `<div class="note">Pip is alerting <b>${esc(who)}</b>. You're not on duty, so your phone stays quiet.</div>
+      <div class="demo-peek">${S.alert.to.map(id => `<button data-act="me" data-id="${id}"><span>DEMO ONLY</span> See what ${esc(nameOf(id))}'s phone shows ▸</button>`).join('')}</div>`;
   }
   h += dutyCard();
   h += `<div class="card"><div class="row"><div class="label">Today's shifts</div><button class="link small" data-act="tab" data-tab="schedule">See schedule</button></div>${stripHTML()}</div>`;

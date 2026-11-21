@@ -190,3 +190,9 @@ body.night .wk,body.night .wk-col{background-color:#1d1458}
 .sim-bar{position:absolute;left:0;right:0;bottom:62px;z-index:5;min-height:44px;background:var(--twilight);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px}
 .sim-bar span{font-size:10px;letter-spacing:.08em;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:2px 6px}
 main{padding-bottom:130px}
+
+/* Demo-only peeks at another family member's phone (not part of the real app) */
+.demo-peek{margin:-4px 0 12px}
+.demo-peek button{width:100%;min-height:44px;border-radius:12px;background:var(--twilight);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px}
+.demo-peek button+button{margin-top:6px}
+.demo-peek span{font-size:10px;letter-spacing:.08em;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:2px 6px}
