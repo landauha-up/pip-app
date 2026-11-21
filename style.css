@@ -184,3 +184,9 @@ a.btn.feedback{text-align:center;text-decoration:none;margin:4px 0 12px;font-siz
 .wk-col.past .wb{opacity:.8}
 .wa{position:absolute;right:0;width:45%;z-index:2;pointer-events:none;border-left:2px solid var(--taupe);background:repeating-linear-gradient(135deg,rgba(151,126,110,.25) 0 4px,rgba(151,126,110,0) 4px 8px);font-size:9px;font-weight:800;color:var(--taupe-text);text-align:right;padding-right:2px}
 body.night .wk,body.night .wk-col{background-color:#1d1458}
+
+/* Demo control: a slim strip above the tab bar, clearly separate from the app itself */
+.sim-fab{display:none}
+.sim-bar{position:absolute;left:0;right:0;bottom:62px;z-index:5;min-height:44px;background:var(--twilight);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px}
+.sim-bar span{font-size:10px;letter-spacing:.08em;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:2px 6px}
+main{padding-bottom:130px}

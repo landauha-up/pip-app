@@ -295,7 +295,7 @@ function homeHTML() {
   if (!S.introSeen) h += `<div class="intro"><b>Welcome to Pip.</b> This is a prototype with a pretend family: baby Henry, Mom, Dad and Nan the nanny. Nothing here is real data.<br><br>
     <b>Things to try:</b><br>1. <b>Plan who's on duty</b> in Schedule, by the day or the week. Upcoming days show faded shifts, Pip's guesses from past weeks: double-tap one to confirm it.<br>
     2. <b>Say you can't</b> with "I can't be on duty…", for example for a last-minute meeting.<br>
-    3. Tap <b>Simulate</b> and choose "Diaper is soiled", then answer the alert or pass it on with "Can't right now".<br>
+    3. Tap <b>Pretend to be the Pip device</b> at the bottom and choose "Diaper is soiled", then answer the alert or pass it on with "Can't right now".<br>
     <button class="link" data-act="intro-ok" style="padding-left:0">Got it</button></div>`;
   if (S.me !== S.people[0].id) h += `<button class="link small" data-act="me" data-id="${S.people[0].id}" style="padding-left:0;margin-top:-8px">← Back to ${esc(S.people[0].name)}'s phone</button>`;
   if (S.handled && S.handled.for.includes(S.me)) h += `<div class="note">✓ ${esc(S.handled.text)} <button class="link" data-act="handled-ok">OK</button></div>`;
@@ -621,7 +621,7 @@ function openSettings() {
     <p class="small muted" style="margin-top:0">Prototype: turning one on adds a sample "Pip conflict" so you can see how it looks.</p>
     <div class="switch"><span><b>Night colors</b></span><div class="seg">${['auto', 'on', 'off'].map(v => `<button data-act="set-night" data-v="${v}" class="${st.night === v ? 'on' : ''}">${v === 'auto' ? 'After 9 pm' : v}</button>`).join('')}</div></div>
     <div class="label" style="margin-top:14px">Whose phone (demo)</div>${youChips().replace(/^.*?<div class="you">/, '<div class="you">')}
-    <div class="note small"><b>About this prototype.</b> Henry, Mom, Dad and Nan are a pretend family. No real baby, health or personal data is used. Everything stays on this device. The Pip device is played by the Simulate button.</div>
+    <div class="note small"><b>About this prototype.</b> Henry, Mom, Dad and Nan are a pretend family. No real baby, health or personal data is used. Everything stays on this device. The Pip device is played by the "Pretend to be the Pip device" strip.</div>
     <a class="btn secondary feedback" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Give feedback (2 min)</a>
     <button class="btn quiet" data-act="sim">Open device simulator</button>
     <button class="btn quiet" data-act="reset">Reset demo data</button>
