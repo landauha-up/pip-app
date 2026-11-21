@@ -4,6 +4,7 @@
    the "Simulate" controls; the real device link (MQTT over Wi-Fi) is not part of this build. */
 
 const KEY = 'pip-demo-v2';
+const FEEDBACK_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScaP8q5moJUXdaTbvfv9TCxrhUsxv41jsvfjWMHsFe-kJBadw/viewform';
 const PX_PER_MIN = 48 / 60;
 const SNAP = 15;
 const $ = (s, el = document) => el.querySelector(s);
@@ -308,6 +309,7 @@ function homeHTML() {
   h += `<div class="card"><div class="row"><div class="label">Today's shifts</div><button class="link small" data-act="tab" data-tab="schedule">See schedule</button></div>${stripHTML()}</div>`;
   h += `<div class="card"><div class="label">Today</div><div class="mid">${S.poops.length} poop${S.poops.length === 1 ? '' : 's'}</div>
       <div class="muted">${poopsLast ? `last at ${poopsLast} · counted by Pip, no logging` : 'counted by Pip, no logging'}</div></div>`;
+  h += `<a class="btn secondary feedback" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Done trying Pip? Give feedback (2 min)</a>`;
   return h;
 }
 
@@ -593,6 +595,7 @@ function openSettings() {
     ${st.tracking ? `<div class="note">${S.history.length ? S.history.slice(-8).reverse().map(t => `${new Date(t).toLocaleDateString([], { weekday: 'short' })} ${fmtTime(t)}`).join('<br>') : 'No history yet. Changes are saved from now on.'}</div>` : ''}
     <div class="switch"><span><b>Night colors</b></span><div class="seg">${['auto', 'on', 'off'].map(v => `<button data-act="set-night" data-v="${v}" class="${st.night === v ? 'on' : ''}">${v === 'auto' ? 'After 9 pm' : v}</button>`).join('')}</div></div>
     <div class="note small"><b>About this prototype.</b> Henry, Mom, Dad and Nan are a pretend family. No real baby, health or personal data is used. Everything stays on this device. The Pip device is played by the Simulate button.</div>
+    <a class="btn secondary feedback" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Give feedback (2 min)</a>
     <button class="btn quiet" data-act="sim">Open device simulator</button>
     <button class="btn quiet" data-act="reset">Reset demo data</button>
     <button class="btn primary" data-act="close">Done</button>`);

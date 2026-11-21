@@ -154,3 +154,5 @@ body.night input{background:#1d1458;color:#fff;border-color:#2c2370}
 .wc.past{opacity:.55}
 .picks button.not.on{background:var(--taupe);border-color:var(--taupe);color:#fff}
 body.night .wc.open{background:#2a2170;color:#bcb0a7}
+
+a.btn.feedback{text-align:center;text-decoration:none;margin:4px 0 12px;font-size:15px;display:flex;align-items:center;justify-content:center}
