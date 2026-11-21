@@ -1,5 +1,5 @@
 :root{
-  --twilight:#0E004A; --indigo:#5C6AA5; --sky:#CCE5FF; --gold:#FFF99F; --taupe:#977E6E;
+  --twilight:#0E004A; --indigo:#5C6AA5; --sky:#CCE5FF; --gold:#FFF1B8; --haze:#DDEAF8; --taupe:#977E6E;
   --page:#FBFAF8; --taupe-text:#5E4B3F; --indigo-text:#4A5690; --on-tint:#3D3570; --card:#fff; --line:#ece7e2;
   --head:"New Kansas","Fraunces",Georgia,serif; --body:"Nunito Sans",system-ui,sans-serif;
   --r:18px;
@@ -25,7 +25,7 @@ h2{font-size:21px}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#f2f0ee;font-size:13px;font-weight:700}
 .chip.ok{background:#fff;color:var(--indigo-text)}
 .chip.warn{background:var(--gold);color:var(--twilight)}
-.status.clean{background:var(--sky)}
+.status.clean{background:var(--haze)}
 .status.needs{background:var(--gold)}
 .btn{display:block;width:100%;min-height:52px;border-radius:16px;font-weight:800;font-size:17px;padding:12px}
 .btn.primary{background:var(--indigo);color:#fff}
