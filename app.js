@@ -297,7 +297,7 @@ function homeHTML() {
     2. <b>Say you can't</b> with "I can't be on duty…", for example for a last-minute meeting.<br>
     3. Tap <b>Simulate</b> and choose "Diaper is soiled", then answer the alert or pass it on with "Can't right now".<br>
     <button class="link" data-act="intro-ok" style="padding-left:0">Got it</button></div>`;
-  h += youChips();
+  if (S.me !== S.people[0].id) h += `<button class="link small" data-act="me" data-id="${S.people[0].id}" style="padding-left:0;margin-top:-8px">← Back to ${esc(S.people[0].name)}'s phone</button>`;
   if (S.handled && S.handled.for.includes(S.me)) h += `<div class="note">✓ ${esc(S.handled.text)} <button class="link" data-act="handled-ok">OK</button></div>`;
   if (sensing && sensing.kind === 'soiled') h += `<div class="note">Pip is noticing a smell. It waits ${delaySec()} seconds to be sure before alerting anyone, so passing gas doesn't set it off.</div>`;
   h += `<div class="card status ${needs ? 'needs' : 'clean'}">
@@ -620,6 +620,7 @@ function openSettings() {
     <label class="switch"><span>Apple Calendar</span><input type="checkbox" data-act="set-cal" data-v="apple" ${S.cal.apple ? 'checked' : ''}></label>
     <p class="small muted" style="margin-top:0">Prototype: turning one on adds a sample "Pip conflict" so you can see how it looks.</p>
     <div class="switch"><span><b>Night colors</b></span><div class="seg">${['auto', 'on', 'off'].map(v => `<button data-act="set-night" data-v="${v}" class="${st.night === v ? 'on' : ''}">${v === 'auto' ? 'After 9 pm' : v}</button>`).join('')}</div></div>
+    <div class="label" style="margin-top:14px">Whose phone (demo)</div>${youChips().replace(/^.*?<div class="you">/, '<div class="you">')}
     <div class="note small"><b>About this prototype.</b> Henry, Mom, Dad and Nan are a pretend family. No real baby, health or personal data is used. Everything stays on this device. The Pip device is played by the Simulate button.</div>
     <a class="btn secondary feedback" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Give feedback (2 min)</a>
     <button class="btn quiet" data-act="sim">Open device simulator</button>
@@ -762,7 +763,7 @@ document.addEventListener('click', e => {
   const act = t.dataset.act, id = t.dataset.id;
   const blk = id && S.blocks.find(b => b.id === id);
   switch (act) {
-    case 'me': S.me = id; save(); render(); break;
+    case 'me': S.me = id; save(); render(); if (!$('#sheet').classList.contains('hidden') && $('#sheetCard h2')?.textContent === 'Settings') openSettings(); break;
     case 'tab': tab = t.dataset.tab; render(); break;
     case 'intro-ok': S.introSeen = true; save(); render(); break;
     case 'handled-ok': S.handled.for = S.handled.for.filter(x => x !== S.me); if (!S.handled.for.length) S.handled = null; save(); render(); break;
