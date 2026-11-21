@@ -41,7 +41,7 @@ function sampleState() {
     add(d, 420, 720, ['mom']);
     add(d, 720, 1020, isWeekend(d) ? ['mom'] : ['nan']);
     add(d, 1080, 1320, ['mom', 'dad']);
-    if (i < 0 && i !== -4) add(d, 1320, 1440, ['dad']); // Dad usually takes late evening (not confirmed today)
+    if (i !== -4) add(d, 1320, 1440, ['dad']); // Dad usually takes late evening
   }
   return {
     v: 2,
@@ -64,6 +64,7 @@ function sampleState() {
     handled: null,
     settings: { demo: true, tracking: false, night: 'auto', delay: 20, handoff: 180 },
     introSeen: false,
+    cal: { google: false, apple: false }, // calendar sync (simulated)
     log: [],
   };
 }
@@ -132,7 +133,8 @@ const available = (date = today(), m = nowMin()) => allIds().filter(id => !isAwa
 // as a faded shift on any day (today or later) where that time isn't covered yet.
 const sugKey = (date, b) => `${date}|${b.start}|${b.end}|${b.people.slice().sort().join('+')}`;
 function suggestionsOn(date) {
-  if (dayDiff(today(), date) < 0) return [];
+  // Suggestions only appear for days ahead: the habit we want is planning ahead, not last-minute
+  if (dayDiff(today(), date) <= 0) return [];
   const counts = new Map();
   for (let i = 1; i <= 7; i++) {
     const d = addDays(today(), -i);
@@ -288,7 +290,7 @@ function homeHTML() {
   let h = `<div class="top"><h1>${greeting()}, ${esc(me ? me.name : '')}</h1>
     <button class="gear" data-act="settings" aria-label="Settings">⚙</button></div>`;
   if (!S.introSeen) h += `<div class="intro"><b>Welcome to Pip.</b> This is a prototype with a pretend family: baby Henry, Mom, Dad and Nan the nanny. Nothing here is real data.<br><br>
-    <b>Things to try:</b><br>1. <b>Plan who's on duty</b> in Schedule, by the day or the week. Faded shifts are Pip's guesses from past weeks: double-tap one to confirm it.<br>
+    <b>Things to try:</b><br>1. <b>Plan who's on duty</b> in Schedule, by the day or the week. Upcoming days show faded shifts, Pip's guesses from past weeks: double-tap one to confirm it.<br>
     2. <b>Say you can't</b> with "I can't be on duty…", for example for a last-minute meeting.<br>
     3. Tap <b>Simulate</b> and choose "Diaper is soiled", then answer the alert or pass it on with "Can't right now".<br>
     <button class="link" data-act="intro-ok" style="padding-left:0">Got it</button></div>`;
@@ -363,23 +365,23 @@ function blockHTML(b, pos) {
   return `<div class="blk ${blockClass(b)}" data-id="${esc(b.id)}" style="top:${top}px;height:${ht}px;left:calc(${l}% + 4px);width:calc(${w}% - 8px)">
     <div class="h top" data-edge="start"></div>
     ${label}<div class="t tt">${fmtMin(b.start)} to ${fmtEnd(b.end)}</div>
-    ${b.sugg ? `<div class="t">suggested · double-tap to confirm</div><button class="x" data-act="sugg-no" data-id="${esc(b.id)}" aria-label="Dismiss suggestion">✕</button>` : ''}
+    ${b.sugg ? `<div class="t">suggested · double-tap to confirm</div>${awayOn(b.date).filter(x => b.people.includes(x.person) && x.start < b.end && b.start < x.end).map(x => `<div class="t"><b>${esc(nameOf(x.person))} is busy ${fmtMin(x.start)} to ${fmtEnd(x.end)}</b></div>`).join('')}<button class="x" data-act="sugg-no" data-id="${esc(b.id)}" aria-label="Dismiss suggestion">✕</button>` : ''}
     <div class="h bot" data-edge="end"></div></div>`;
 }
 function dayHTML() {
   const sugg = suggestionsOn(viewDay);
   const all = [...blocksOn(viewDay), ...sugg];
   const pos = layoutCols(all);
-  let h = `<div class="muted small">Tap an empty time to add a shift. Drag the bar on a shift's edge to stretch it. <b>Faded shifts</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
+  let h = `<div class="muted small">Tap an empty time to add a shift. Drag the bar on a shift's edge to stretch it. On upcoming days, <b>faded shifts</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
     <div class="row" style="margin-top:10px;gap:8px">
       <button class="btn quiet tool" data-act="away" data-date="${viewDay}">✕ Someone can't</button>
       <button class="btn quiet tool" data-act="repeat-day">↻ Same every day</button>
     </div>
-    ${sugg.length ? `<button class="btn quiet tool" data-act="accept-day" style="margin-top:8px">✓ Confirm all ${sugg.length} faded shift${sugg.length > 1 ? 's' : ''}</button>` : ''}`;
+`;
   h += `<div class="tl" id="tl"><div class="hours">${Array.from({ length: 24 }, (_, i) => `<div>${fmtMin(i * 60)}</div>`).join('')}</div>
     <div class="grid" id="grid" style="height:${1440 * PX_PER_MIN}px">
       ${all.map(b => blockHTML(b, pos.get(b.id))).join('')}
-      ${awayOn(viewDay).map(a => `<div class="away" style="top:${a.start * PX_PER_MIN}px;height:${(a.end - a.start) * PX_PER_MIN}px"><span>Not ${esc(nameOf(a.person))}</span></div>`).join('')}
+      ${awayOn(viewDay).map(a => `<div class="away" style="top:${a.start * PX_PER_MIN}px;height:${(a.end - a.start) * PX_PER_MIN}px"><span>Not ${esc(nameOf(a.person))}${a.source ? ` (${esc(a.source.split(' ')[0])})` : ''}</span></div>`).join('')}
       ${viewDay === today() ? `<div class="nowline" style="top:${nowMin() * PX_PER_MIN}px"></div>` : ''}
     </div></div>`;
   return h;
@@ -565,7 +567,8 @@ function openAway(date) {
     <div class="row"><span>From <b>${fmtMin(d.start)}</b></span><span>${step('start', -SNAP)} ${step('start', SNAP)}</span></div>
     <div class="row" style="margin-top:8px"><span>Until <b>${fmtEnd(d.end)}</b></span><span>${step('end', -SNAP)} ${step('end', SNAP)}</span></div>
     <button class="btn primary" data-act="away-save" style="margin-top:16px">Save</button>
-    ${list.length ? `<div class="label" style="margin-top:16px">Already marked</div>${list.map(x => `<div class="row" style="min-height:44px"><span>Not ${esc(nameOf(x.person))}, ${fmtMin(x.start)} to ${fmtEnd(x.end)}</span><button class="link" data-act="away-del" data-id="${x.id}">Remove</button></div>`).join('')}` : ''}
+    ${list.length ? `<div class="label" style="margin-top:16px">Already marked</div>${list.map(x => `<div class="row" style="min-height:44px"><span>Not ${esc(nameOf(x.person))}, ${fmtMin(x.start)} to ${fmtEnd(x.end)}${x.source ? ` <span class="small muted">(${esc(x.source)})</span>` : ''}</span>${x.source ? '' : `<button class="link" data-act="away-del" data-id="${x.id}">Remove</button>`}</div>`).join('')}` : ''}
+    <p class="small muted">Tip: connect Google or Apple Calendar in Settings, and events you mark as a "Pip conflict" show up here on their own.</p>
     <button class="btn quiet" data-act="close" style="margin-top:8px">Cancel</button>`, () => { awayDraft = null; });
 }
 
@@ -593,6 +596,11 @@ function openSettings() {
     <label class="switch"><span><b>Fast demo</b><br><span class="small muted">Pip waits 5 s (not ${st.delay} s) before alerting, and passes the alert on after 20 s (not 3 min).</span></span><input type="checkbox" data-act="set-demo" ${st.demo ? 'checked' : ''}></label>
     <label class="switch"><span><b>Poop-time tracking</b><br><span class="small muted">Off by default. When on, Pip keeps a private history of change times. Nothing leaves the family.</span></span><input type="checkbox" data-act="set-track" ${st.tracking ? 'checked' : ''}></label>
     ${st.tracking ? `<div class="note">${S.history.length ? S.history.slice(-8).reverse().map(t => `${new Date(t).toLocaleDateString([], { weekday: 'short' })} ${fmtTime(t)}`).join('<br>') : 'No history yet. Changes are saved from now on.'}</div>` : ''}
+    <div class="label" style="margin-top:14px">Calendar conflicts</div>
+    <p class="small muted" style="margin:0 0 4px">Mark an event as a <b>Pip conflict</b> in your calendar app, and Pip shows you as not available then. Pip only sees that you're busy, never the event details.</p>
+    <label class="switch"><span>Google Calendar</span><input type="checkbox" data-act="set-cal" data-v="google" ${S.cal.google ? 'checked' : ''}></label>
+    <label class="switch"><span>Apple Calendar</span><input type="checkbox" data-act="set-cal" data-v="apple" ${S.cal.apple ? 'checked' : ''}></label>
+    <p class="small muted" style="margin-top:0">Prototype: turning one on adds a sample "Pip conflict" so you can see how it looks.</p>
     <div class="switch"><span><b>Night colors</b></span><div class="seg">${['auto', 'on', 'off'].map(v => `<button data-act="set-night" data-v="${v}" class="${st.night === v ? 'on' : ''}">${v === 'auto' ? 'After 9 pm' : v}</button>`).join('')}</div></div>
     <div class="note small"><b>About this prototype.</b> Henry, Mom, Dad and Nan are a pretend family. No real baby, health or personal data is used. Everything stays on this device. The Pip device is played by the Simulate button.</div>
     <a class="btn secondary feedback" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Give feedback (2 min)</a>
@@ -835,6 +843,18 @@ document.addEventListener('click', e => {
       const n = $('#newName').value.trim();
       if (!n) { toast('Type a name first.'); break; }
       S.people.push({ id: uid(), name: n.slice(0, 20), admin: false }); save(); render(); toast(`${n} added to the team.`); break;
+    }
+    case 'set-cal': {
+      const v = t.dataset.v, src = v === 'google' ? 'Google Calendar' : 'Apple Calendar';
+      S.cal[v] = t.checked;
+      S.away = S.away.filter(x => x.source !== src);
+      if (t.checked) {
+        // sample conflicts: tomorrow (Google: Mom 9 to 10:30 am) or the day after (Apple: Dad 7 to 8 pm)
+        if (v === 'google') S.away.push({ id: uid(), date: addDays(today(), 1), start: 540, end: 630, person: 'mom', source: src });
+        else S.away.push({ id: uid(), date: addDays(today(), 2), start: 1140, end: 1200, person: 'dad', source: src });
+        toast(`${src} connected. ${v === 'google' ? "Mom's 9 am meeting tomorrow" : "Dad's 7 pm event in 2 days"} now shows as "Not ${v === 'google' ? 'Mom' : 'Dad'}".`);
+      }
+      save(); render(); openSettings(); break;
     }
     case 'set-demo': S.settings.demo = t.checked; save(); break;
     case 'set-track': S.settings.tracking = t.checked; if (!t.checked) S.history = []; save(); openSettings(); break;
