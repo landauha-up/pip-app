@@ -3,19 +3,48 @@
    State lives only in this browser (localStorage). The Pip device is simulated with
    the "Simulate" controls; the real device link (MQTT over Wi-Fi) is not part of this build. */
 
-const KEY = 'pip-demo-v1';
+const KEY = 'pip-demo-v2';
 const PX_PER_MIN = 48 / 60;
 const SNAP = 15;
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Math.random().toString(36).slice(2, 9);
+const pad = n => String(n).padStart(2, '0');
+
+/* ---------- Dates ---------- */
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => iso(new Date());
+function addDays(s, n) { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d); }
+function dayDiff(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000); }
+const weekday = s => new Date(s + 'T12:00:00').getDay(); // 0 Sun
+const isWeekend = s => [0, 6].includes(weekday(s));
+function mondayOf(s) { return addDays(s, -((weekday(s) + 6) % 7)); }
+function dayLabel(s) {
+  const n = dayDiff(today(), s);
+  if (n === 0) return 'Today';
+  if (n === 1) return 'Tomorrow';
+  if (n === -1) return 'Yesterday';
+  return new Date(s + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+const shortDay = s => new Date(s + 'T12:00:00').toLocaleDateString([], { weekday: 'short' });
 
 /* ---------- Sample data ---------- */
 function sampleState() {
-  const now = Date.now();
+  const now = Date.now(), t = today();
+  const blocks = [];
+  const add = (date, start, end, people) => blocks.push({ id: uid(), date, start, end, people });
+  // Last 7 days of history, so Pip has a pattern to learn from
+  for (let i = -7; i <= 0; i++) {
+    const d = addDays(t, i);
+    add(d, 0, 420, ['dad']);
+    add(d, 420, 720, ['mom']);
+    add(d, 720, 1020, isWeekend(d) ? ['mom'] : ['nan']);
+    add(d, 1080, 1320, ['mom', 'dad']);
+    if (i < 0 && i !== -4) add(d, 1320, 1440, ['dad']); // Dad usually takes late evening (not confirmed today)
+  }
   return {
-    v: 1,
-    day: new Date().toDateString(),
+    v: 2,
+    day: t,
     baby: 'Henry',
     people: [
       { id: 'mom', name: 'Mom', admin: true },
@@ -23,13 +52,9 @@ function sampleState() {
       { id: 'nan', name: 'Nan', admin: false, role: 'Nanny' },
     ],
     me: 'mom',
-    blocks: [
-      { id: uid(), start: 0, end: 420, people: ['dad'], daily: true },
-      { id: uid(), start: 420, end: 720, people: ['mom'], daily: true },
-      { id: uid(), start: 720, end: 1020, people: ['nan'], daily: true },
-      { id: uid(), start: 1080, end: 1320, people: ['mom', 'dad'], daily: true },
-      { id: uid(), start: 1320, end: 1440, people: ['dad'], sugg: true },
-    ],
+    blocks,
+    away: [],      // {id, date, start, end, person}: "Not Mom" times
+    dismissed: [], // suggestion keys the family dismissed
     lastChanged: now - 72 * 60000,
     poops: [now - 6 * 3600000, now - 75 * 60000],
     history: [],
@@ -44,15 +69,17 @@ function sampleState() {
 
 let S = load();
 let tab = 'home';
-let sensing = null; // {kind, start, until}
+let sensing = null;
 let chimeTimer = null;
 let weekView = false;
+let viewDay = today();
+let viewWeek = mondayOf(today());
 
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && s.v === 1) {
-      if (s.day !== new Date().toDateString()) { s.day = new Date().toDateString(); s.poops = []; }
+    if (s && s.v === 2) {
+      if (s.day !== today()) { s.day = today(); s.poops = []; }
       return s;
     }
   } catch (e) { /* fall through */ }
@@ -64,14 +91,16 @@ function save() { localStorage.setItem(KEY, JSON.stringify(S)); }
 const person = id => S.people.find(p => p.id === id);
 const nameOf = id => (person(id) || { name: 'Someone' }).name;
 const namesOf = ids => ids.map(nameOf).join(' + ');
+const allIds = () => S.people.map(p => p.id);
 function nowMin() { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
 function fmtMin(m) {
   m = ((m % 1440) + 1440) % 1440;
   let h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? 'pm' : 'am';
   h = h % 12 || 12;
-  return mm ? `${h}:${String(mm).padStart(2, '0')} ${ap}` : `${h} ${ap}`;
+  return mm ? `${h}:${pad(mm)} ${ap}` : `${h} ${ap}`;
 }
-function fmtTime(ts) { const d = new Date(ts); return fmtMin(d.getHours() * 60 + d.getMinutes()).replace(/^(\d+) /, '$1:00 '); }
+function fmtEnd(m) { return m >= 1440 ? 'midnight' : fmtMin(m); }
+function fmtTime(ts) { const d = new Date(ts); return `${d.getHours() % 12 || 12}:${pad(d.getMinutes())} ${d.getHours() >= 12 ? 'pm' : 'am'}`; }
 function fmtDur(mins) {
   if (mins < 60) return `${mins} min`;
   const h = Math.floor(mins / 60), m = mins % 60;
@@ -80,26 +109,83 @@ function fmtDur(mins) {
 function ago(ts) {
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
   if (s < 60) return s < 10 ? 'just now' : `${s} sec ago`;
-  const m = Math.floor(s / 60);
-  return `${m} min ago`;
+  return `${Math.floor(s / 60)} min ago`;
 }
-function mmss(sec) { sec = Math.max(0, Math.ceil(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
+function mmss(sec) { sec = Math.max(0, Math.ceil(sec)); return `${Math.floor(sec / 60)}:${pad(sec % 60)}`; }
 function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
 const delaySec = () => S.settings.demo ? 5 : S.settings.delay;
 const handoffSec = () => S.settings.demo ? 20 : S.settings.handoff;
 
-function confirmed() { return S.blocks.filter(b => !b.sugg); }
-function blocksAt(m) { return confirmed().filter(b => b.start <= m && m < b.end); }
-function onDutyAt(m) { return [...new Set(blocksAt(m).flatMap(b => b.people))].filter(person); }
-function currentShift() {
-  const m = nowMin(), bs = blocksAt(m);
-  if (!bs.length) {
-    const next = confirmed().filter(b => b.start > m).sort((a, b) => a.start - b.start)[0];
-    return { people: [], until: next ? next.start : 1440, next: next ? next.people : null };
+/* ---------- Schedule model ---------- */
+const blocksOn = date => S.blocks.filter(b => b.date === date);
+const awayOn = date => S.away.filter(a => a.date === date);
+function awayAt(date, m) { return awayOn(date).filter(a => a.start <= m && m < a.end).map(a => a.person); }
+function isAway(id, date = today(), m = nowMin()) { return awayAt(date, m).includes(id); }
+// Who is on duty at minute m: people in confirmed shifts, minus anyone marked "Not available"
+function scheduledAt(date, m) { return [...new Set(blocksOn(date).filter(b => b.start <= m && m < b.end).flatMap(b => b.people))].filter(person); }
+function onDutyAt(m, date = today()) { const out = awayAt(date, m); return scheduledAt(date, m).filter(id => !out.includes(id)); }
+const available = (date = today(), m = nowMin()) => allIds().filter(id => !isAway(id, date, m));
+
+// Pattern recognition: if the same person covered the same time slot on 2+ of the
+// last 7 days (weekdays matched with weekdays, weekends with weekends), suggest it
+// as a faded shift on any day (today or later) where that time isn't covered yet.
+const sugKey = (date, b) => `${date}|${b.start}|${b.end}|${b.people.slice().sort().join('+')}`;
+function suggestionsOn(date) {
+  if (dayDiff(today(), date) < 0) return [];
+  const counts = new Map();
+  for (let i = 1; i <= 7; i++) {
+    const d = addDays(today(), -i);
+    if (isWeekend(d) !== isWeekend(date)) continue;
+    blocksOn(d).forEach(b => {
+      const k = `${b.start}|${b.end}|${b.people.slice().sort().join('+')}`;
+      const c = counts.get(k) || { start: b.start, end: b.end, people: b.people.slice(), days: new Set() };
+      c.days.add(d); counts.set(k, c);
+    });
   }
-  const until = Math.min(...bs.map(b => b.end));
-  const nextPeople = onDutyAt(until % 1440);
-  return { people: onDutyAt(m), until, next: nextPeople };
+  const mine = blocksOn(date);
+  const out = [];
+  counts.forEach(c => {
+    if (c.days.size < 2) return;
+    if (mine.some(b => b.start < c.end && c.start < b.end)) return;
+    if (out.some(s => s.start < c.end && c.start < s.end)) return;
+    const key = sugKey(date, c);
+    if (S.dismissed.includes(key)) return;
+    out.push({ id: 's:' + key, key, date, start: c.start, end: c.end, people: c.people, sugg: true, seen: c.days.size });
+  });
+  return out.sort((a, b) => a.start - b.start);
+}
+function confirmSugg(s) {
+  S.blocks.push({ id: uid(), date: s.date, start: s.start, end: s.end, people: s.people.slice() });
+}
+function findSugg(id) {
+  const date = id.slice(2).split('|')[0];
+  return suggestionsOn(date).find(s => s.id === id);
+}
+// Put people on duty for [a, z) on a date, trimming whatever was there before
+function setRange(date, a, z, people) {
+  const next = [];
+  S.blocks.forEach(b => {
+    if (b.date !== date || b.end <= a || b.start >= z) return next.push(b);
+    if (b.start < a) next.push({ ...b, id: uid(), end: a });
+    if (b.end > z) next.push({ ...b, id: uid(), start: z });
+  });
+  S.blocks = next;
+  if (people.length) S.blocks.push({ id: uid(), date, start: a, end: z, people: people.slice() });
+}
+function setAwayRange(date, a, z, ids) {
+  S.away = S.away.filter(x => !(x.date === date && x.start === a && x.end === z));
+  ids.forEach(p => S.away.push({ id: uid(), date, start: a, end: z, person: p }));
+}
+
+function currentShift() {
+  const t = today(), m = nowMin(), people = onDutyAt(m);
+  const key = people.join();
+  const cuts = [...new Set([1440, ...blocksOn(t).flatMap(b => [b.start, b.end]), ...awayOn(t).flatMap(a => [a.start, a.end])])].filter(x => x > m).sort((a, b) => a - b);
+  let until = 1440;
+  for (const c of cuts) { if (c >= 1440 || onDutyAt(c).join() !== key) { until = c; break; } }
+  const next = until < 1440 ? onDutyAt(until) : [];
+  const sugg = suggestionsOn(t).find(s => s.start === until);
+  return { people, until, next, sugg };
 }
 
 /* ---------- Night mode ---------- */
@@ -116,8 +202,9 @@ function render() {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   renderBanner();
   const el = $('#screen');
+  const keepScroll = $('#tl') ? $('#tl').scrollTop : null;
   if (tab === 'home') el.innerHTML = homeHTML();
-  if (tab === 'schedule') { el.innerHTML = scheduleHTML(); wireSchedule(); }
+  if (tab === 'schedule') { el.innerHTML = scheduleHTML(); wireSchedule(keepScroll); }
   if (tab === 'team') el.innerHTML = teamHTML();
   renderAlert();
 }
@@ -142,29 +229,43 @@ function youChips() {
     `<button data-act="me" data-id="${p.id}" class="${p.id === S.me ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>`;
 }
 
-function dutyText() {
-  const sh = currentShift();
+function dutyCard() {
+  const sh = currentShift(), t = today(), m = nowMin();
+  const outNow = awayAt(t, m);
+  const outTxt = outNow.map(id => {
+    const a = awayOn(t).find(x => x.person === id && x.start <= m && m < x.end);
+    return `${nameOf(id)} can't until ${fmtEnd(a.end)}`;
+  }).join(' · ');
+  let head, sub, mine = false, extra = '';
   if (!sh.people.length) {
-    return { head: 'No one on duty', sub: 'Alerts go to everyone right now.' };
+    const who = available();
+    head = 'No one on duty';
+    sub = `Alerts go to ${who.length === allIds().length ? 'everyone' : `everyone who's free (${namesOf(who)})`} until someone is scheduled.`;
+    const scheduled = scheduledAt(t, m);
+    if (scheduled.length && outNow.length) {
+      extra = `<div style="margin-top:10px">${who.map(id => `<button class="chip" style="min-height:40px;margin:0 6px 6px 0" data-act="cover" data-p="${id}">Ask ${esc(id === S.me ? 'me' : nameOf(id))} to cover</button>`).join('')}</div>`;
+    }
+  } else {
+    mine = sh.people.includes(S.me);
+    const others = sh.people.filter(id => id !== S.me);
+    if (mine && others.length) head = `You're on duty with ${namesOf(others)}`;
+    else if (mine) head = "You're on duty";
+    else head = `${namesOf(sh.people)} ${sh.people.length > 1 ? 'are' : 'is'} on duty`;
+    const left = sh.until - m;
+    const nextTxt = sh.next.length ? `then ${sh.next.length === 1 && sh.next[0] === S.me ? 'you' : namesOf(sh.next)}`
+      : sh.sugg ? `then maybe ${namesOf(sh.sugg.people)} (not confirmed yet)` : 'then no one is scheduled';
+    sub = `for ${fmtDur(left)} more, ${nextTxt}`;
   }
-  const mine = sh.people.includes(S.me);
-  const others = sh.people.filter(id => id !== S.me);
-  let head;
-  if (mine && others.length) head = `You're on duty with ${namesOf(others)}`;
-  else if (mine) head = "You're on duty";
-  else head = `${namesOf(sh.people)} ${sh.people.length > 1 ? 'are' : 'is'} on duty`;
-  const left = sh.until - nowMin();
-  const sugg = S.blocks.find(b => b.sugg && b.start === sh.until);
-  const nextTxt = sh.next && sh.next.length ? `then ${sh.next.includes(S.me) && sh.next.length === 1 ? 'you' : namesOf(sh.next)}` : sugg ? `then maybe ${namesOf(sugg.people)} (not confirmed yet)` : 'then no one is scheduled';
-  return { head, sub: `for ${fmtDur(left)} more, ${nextTxt}`, mine };
+  return `<div class="card ${mine ? 'status clean' : ''}"><div class="label">On duty now</div>
+    <div class="mid">${esc(head)}</div><div class="muted">${esc(sub)}</div>
+    ${outTxt ? `<div class="small" style="margin-top:6px"><b>✕ ${esc(outTxt)}</b></div>` : ''}${extra}
+    <button class="btn quiet" data-act="away" style="margin-top:12px;min-height:44px;font-size:15px">I can't be on duty…</button></div>`;
 }
 
 function stripHTML() {
-  const bs = confirmed().slice().sort((a, b) => a.start - b.start);
-  const segs = []; let t = 0;
-  const m = nowMin();
-  // walk the day in pieces where the on-duty set is constant
-  const cuts = [...new Set([0, 1440, ...bs.flatMap(b => [b.start, b.end])])].sort((a, b) => a - b);
+  const t = today(), m = nowMin();
+  const cuts = [...new Set([0, 1440, ...blocksOn(t).flatMap(b => [b.start, b.end]), ...awayOn(t).flatMap(a => [a.start, a.end])])].sort((a, b) => a - b);
+  const segs = [];
   for (let i = 0; i < cuts.length - 1; i++) {
     const a = cuts[i], z = cuts[i + 1], who = onDutyAt(a);
     const last = segs[segs.length - 1];
@@ -172,22 +273,23 @@ function stripHTML() {
     segs.push({ a, z, who, key: who.join() });
   }
   return `<div class="strip">${segs.map(s => {
-    const cls = s.who.length === 0 ? 'gap' : s.who.length > 1 ? 'p-multi' : `p-${esc(nameOf(s.who[0]))}`;
+    const cls = s.who.length === 0 ? 'gap' : s.who.length > 1 ? 'p-multi' : pClass(s.who[0]);
     const now = m >= s.a && m < s.z ? ' now' : '';
-    return `<div class="${cls}${now}" style="flex:${s.z - s.a}" title="${fmtMin(s.a)} to ${fmtMin(s.z)}">${s.z - s.a >= 150 ? (s.who.length ? esc(namesOf(s.who)) : 'open') : ''}</div>`;
+    return `<div class="${cls}${now}" style="flex:${s.z - s.a}" title="${fmtMin(s.a)} to ${fmtEnd(s.z)}">${s.z - s.a >= 150 ? (s.who.length ? esc(namesOf(s.who)) : 'open') : ''}</div>`;
   }).join('')}</div>
   <div class="row small muted" style="margin-top:4px"><span>12 am</span><span>noon</span><span>12 am</span></div>`;
 }
 
 function homeHTML() {
   const needs = !!S.alert;
-  const d = dutyText();
   const me = person(S.me);
   const poopsLast = S.poops.length ? fmtTime(S.poops[S.poops.length - 1]) : null;
   let h = `<div class="top"><h1>${greeting()}, ${esc(me ? me.name : '')}</h1>
     <button class="gear" data-act="settings" aria-label="Settings">⚙</button></div>`;
   if (!S.introSeen) h += `<div class="intro"><b>Welcome to Pip.</b> This is a prototype with a pretend family: baby Henry, Mom, Dad and Nan the nanny. Nothing here is real data.<br><br>
-    <b>Try this:</b> 1. See who's on duty below. 2. Tap <b>Simulate</b> and choose "Diaper is soiled". 3. Answer the alert, or tap "Can't right now" to pass it to the next person.<br>
+    <b>Things to try:</b><br>1. <b>Plan who's on duty</b> in Schedule, by the day or the week. Faded shifts are Pip's guesses from past weeks: double-tap one to confirm it.<br>
+    2. <b>Say you can't</b> with "I can't be on duty…", for example for a last-minute meeting.<br>
+    3. Tap <b>Simulate</b> and choose "Diaper is soiled", then answer the alert or pass it on with "Can't right now".<br>
     <button class="link" data-act="intro-ok" style="padding-left:0">Got it</button></div>`;
   h += youChips();
   if (S.handled && S.handled.for.includes(S.me)) h += `<div class="note">✓ ${esc(S.handled.text)} <button class="link" data-act="handled-ok">OK</button></div>`;
@@ -198,21 +300,44 @@ function homeHTML() {
       <div class="muted" style="margin-top:6px">${needs ? `since ${fmtTime(S.alert.detectedAt)} · ` : ''}last changed ${fmtTime(S.lastChanged)}</div>
     </div>`;
   if (needs && !S.alert.to.includes(S.me)) {
-    const who = S.alert.everyone ? 'everyone' : namesOf(S.alert.to);
+    const who = S.alert.everyone ? 'everyone who is free' : namesOf(S.alert.to);
     h += `<div class="note">Pip is alerting <b>${esc(who)}</b>. You're not on duty, so your phone stays quiet.
       <div style="margin-top:8px">${S.alert.to.map(id => `<button class="link" data-act="me" data-id="${id}" style="padding-left:0">See ${esc(nameOf(id))}'s phone →</button>`).join(' ')}</div></div>`;
   }
-  h += `<div class="card ${d.mine ? 'status clean' : ''}"><div class="label">On duty now</div>
-      <div class="mid">${esc(d.head)}</div><div class="muted">${esc(d.sub)}</div></div>`;
+  h += dutyCard();
   h += `<div class="card"><div class="row"><div class="label">Today's shifts</div><button class="link small" data-act="tab" data-tab="schedule">See schedule</button></div>${stripHTML()}</div>`;
   h += `<div class="card"><div class="label">Today</div><div class="mid">${S.poops.length} poop${S.poops.length === 1 ? '' : 's'}</div>
       <div class="muted">${poopsLast ? `last at ${poopsLast} · counted by Pip, no logging` : 'counted by Pip, no logging'}</div></div>`;
   return h;
 }
 
-/* ---------- Schedule ---------- */
+/* ---------- Schedule: shared bits ---------- */
+function pClass(id) { const n = nameOf(id); return ['Mom', 'Dad', 'Nan'].includes(n) ? `p-${n}` : 'p-other'; }
+function blockClass(b) { return b.sugg ? 'sugg' : b.people.length > 1 ? 'p-multi' : pClass(b.people[0]); }
+
+// Double-tap detection (works for touch and mouse)
+let lastTap = { key: null, t: 0 }, singleTimer = null;
+function tapOrDouble(key, onSingle, onDouble) {
+  const now = Date.now();
+  clearTimeout(singleTimer);
+  if (lastTap.key === key && now - lastTap.t < 380) { lastTap = { key: null, t: 0 }; onDouble(); return; }
+  lastTap = { key, t: now };
+  singleTimer = setTimeout(onSingle, 380);
+}
+
+function scheduleHTML() {
+  const title = weekView ? weekTitle() : dayLabel(viewDay);
+  let h = `<div class="top"><div class="row" style="gap:4px">
+      <button class="navbtn" data-act="nav" data-d="-1" aria-label="Previous">‹</button>
+      <h1 style="font-size:24px;min-width:0">${esc(title)}</h1>
+      <button class="navbtn" data-act="nav" data-d="1" aria-label="Next">›</button></div>
+    <div class="seg"><button data-act="view" data-v="day" class="${weekView ? '' : 'on'}">Day</button>
+    <button data-act="view" data-v="week" class="${weekView ? 'on' : ''}">Week</button></div></div>`;
+  return h + (weekView ? weekHTML() : dayHTML());
+}
+
+/* ---------- Day view ---------- */
 function layoutCols(bs) {
-  // side-by-side columns for overlapping blocks
   const sorted = bs.slice().sort((a, b) => a.start - b.start || b.end - a.end);
   const out = new Map(); let cluster = [], clusterEnd = -1;
   const flush = () => {
@@ -229,70 +354,45 @@ function layoutCols(bs) {
   flush();
   return out;
 }
-function blockClass(b) {
-  if (b.sugg) return 'sugg';
-  if (b.people.length > 1) return 'p-multi';
-  const n = nameOf(b.people[0]);
-  return ['Mom', 'Dad', 'Nan'].includes(n) ? `p-${n}` : 'p-other';
-}
 function blockHTML(b, pos) {
   const top = b.start * PX_PER_MIN, ht = Math.max(18, (b.end - b.start) * PX_PER_MIN);
   const w = 100 / pos.n, l = pos.col * w;
   const label = b.sugg ? `${esc(namesOf(b.people))}?` : b.people.length ? esc(namesOf(b.people)) : 'Who?';
-  return `<div class="blk ${blockClass(b)}" data-id="${b.id}" style="top:${top}px;height:${ht}px;left:calc(${l}% + 4px);width:calc(${w}% - 8px)">
+  return `<div class="blk ${blockClass(b)}" data-id="${esc(b.id)}" style="top:${top}px;height:${ht}px;left:calc(${l}% + 4px);width:calc(${w}% - 8px)">
     <div class="h top" data-edge="start"></div>
-    ${label}${b.daily && !b.sugg ? ' <span class="t">↻</span>' : ''}<div class="t tt">${fmtMin(b.start)} to ${fmtMin(b.end)}${b.sugg ? ' · tap to confirm' : ''}</div>
+    ${label}<div class="t tt">${fmtMin(b.start)} to ${fmtEnd(b.end)}</div>
+    ${b.sugg ? `<div class="t">suggested · double-tap to confirm</div><button class="x" data-act="sugg-no" data-id="${esc(b.id)}" aria-label="Dismiss suggestion">✕</button>` : ''}
     <div class="h bot" data-edge="end"></div></div>`;
 }
-function scheduleHTML() {
-  let h = `<div class="top"><h1>${weekView ? 'This week' : 'Today'}</h1><div class="seg">
-    <button data-act="view" data-v="day" class="${weekView ? '' : 'on'}">Day</button>
-    <button data-act="view" data-v="week" class="${weekView ? 'on' : ''}">Week</button></div></div>`;
-  if (weekView) return h + weekHTML();
-  h += `<div class="muted small">Tap an empty time to add a shift. Drag the little bar on a shift's edge to stretch it. Dashed shifts are suggestions from past days.</div>
-    <div class="row" style="margin-top:10px;gap:8px"><button class="btn quiet" data-act="add" style="min-height:44px;font-size:15px">+ Add shift</button>
-    <button class="btn quiet" data-act="repeat" style="min-height:44px;font-size:15px;margin-top:0">↻ Repeat every day</button></div>`;
-  const pos = layoutCols(S.blocks);
+function dayHTML() {
+  const sugg = suggestionsOn(viewDay);
+  const all = [...blocksOn(viewDay), ...sugg];
+  const pos = layoutCols(all);
+  let h = `<div class="muted small">Tap an empty time to add a shift. Drag the bar on a shift's edge to stretch it. <b>Faded shifts</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
+    <div class="row" style="margin-top:10px;gap:8px">
+      <button class="btn quiet tool" data-act="away" data-date="${viewDay}">✕ Someone can't</button>
+      <button class="btn quiet tool" data-act="repeat-day">↻ Same every day</button>
+    </div>
+    ${sugg.length ? `<button class="btn quiet tool" data-act="accept-day" style="margin-top:8px">✓ Confirm all ${sugg.length} faded shift${sugg.length > 1 ? 's' : ''}</button>` : ''}`;
   h += `<div class="tl" id="tl"><div class="hours">${Array.from({ length: 24 }, (_, i) => `<div>${fmtMin(i * 60)}</div>`).join('')}</div>
     <div class="grid" id="grid" style="height:${1440 * PX_PER_MIN}px">
-      ${S.blocks.map(b => blockHTML(b, pos.get(b.id))).join('')}
-      <div class="nowline" style="top:${nowMin() * PX_PER_MIN}px"></div>
+      ${all.map(b => blockHTML(b, pos.get(b.id))).join('')}
+      ${awayOn(viewDay).map(a => `<div class="away" style="top:${a.start * PX_PER_MIN}px;height:${(a.end - a.start) * PX_PER_MIN}px"><span>Not ${esc(nameOf(a.person))}</span></div>`).join('')}
+      ${viewDay === today() ? `<div class="nowline" style="top:${nowMin() * PX_PER_MIN}px"></div>` : ''}
     </div></div>`;
   return h;
 }
-function weekHTML() {
-  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const today = (new Date().getDay() + 6) % 7;
-  const periods = [['Night', 180], ['Morn', 540], ['Day', 900], ['Eve', 1200]];
-  let h = `<div class="week"><div></div>${days.map((d, i) => `<div class="h" style="${i === today ? 'color:var(--indigo)' : ''}">${d}${i === today ? '•' : ''}</div>`).join('')}`;
-  periods.forEach(([label, m]) => {
-    h += `<div class="h">${label}</div>`;
-    days.forEach((_, i) => {
-      const bs = S.blocks.filter(b => b.start <= m && m < b.end && (i === today || b.daily || (b.sugg)));
-      const conf = bs.filter(b => !b.sugg && (i === today || b.daily));
-      const sug = bs.filter(b => b.sugg);
-      const ids = [...new Set(conf.flatMap(b => b.people))];
-      if (ids.length) h += `<div class="${ids.length > 1 ? 'p-multi' : `p-${esc(nameOf(ids[0]))}`}">${ids.map(id => esc(nameOf(id)[0])).join('+')}</div>`;
-      else if (sug.length) h += `<div style="border:2px dashed rgba(151,126,110,.6);color:var(--taupe)">${esc(nameOf(sug[0].people[0])[0])}?</div>`;
-      else h += `<div class="gap" style="background:#f4f1ee;color:var(--taupe)">open</div>`;
-    });
-  });
-  h += `</div><p class="muted small">Solid = confirmed. Dashed = suggested from past weeks. M+D = both on duty. "Open" = no one assigned, so alerts go to everyone.</p>
-    <button class="btn quiet" data-act="repeat">↻ Repeat this week</button>`;
-  return h;
-}
 
-function wireSchedule() {
+function wireSchedule(keepScroll) {
+  if (weekView) return wireWeek();
   const grid = $('#grid');
   if (!grid) return;
   const tl = $('#tl');
-  // scroll so "now" is near the top
-  requestAnimationFrame(() => { tl.scrollTop = Math.max(0, nowMin() * PX_PER_MIN - 120); });
+  requestAnimationFrame(() => { tl.scrollTop = keepScroll != null ? keepScroll : Math.max(0, (viewDay === today() ? nowMin() : 420) * PX_PER_MIN - 120); });
   const minAt = y => Math.max(0, Math.min(1440, Math.round(y / PX_PER_MIN / SNAP) * SNAP));
   const yIn = e => e.clientY - grid.getBoundingClientRect().top;
 
-  // Resize by dragging a handle
-  grid.querySelectorAll('.h').forEach(hd => {
+  grid.querySelectorAll('.blk:not(.sugg) .h').forEach(hd => {
     hd.addEventListener('pointerdown', e => {
       e.stopPropagation(); e.preventDefault();
       const el = hd.closest('.blk'), b = S.blocks.find(x => x.id === el.dataset.id), edge = hd.dataset.edge;
@@ -301,7 +401,7 @@ function wireSchedule() {
         const m = minAt(yIn(ev));
         if (edge === 'start') b.start = Math.min(m, b.end - SNAP); else b.end = Math.max(m, b.start + SNAP);
         el.style.top = b.start * PX_PER_MIN + 'px'; el.style.height = (b.end - b.start) * PX_PER_MIN + 'px';
-        el.querySelector('.tt').textContent = `${fmtMin(b.start)} to ${fmtMin(b.end)}`;
+        el.querySelector('.tt').textContent = `${fmtMin(b.start)} to ${fmtEnd(b.end)}`;
       };
       const up = () => { hd.removeEventListener('pointermove', move); save(); render(); };
       hd.addEventListener('pointermove', move);
@@ -310,8 +410,8 @@ function wireSchedule() {
     });
   });
 
-  // Tap a block to edit; tap or (mouse) drag on empty space to create
   grid.addEventListener('pointerdown', e => {
+    if (e.target.closest('.x')) return;
     const blk = e.target.closest('.blk');
     const startY = yIn(e), sx = e.clientX, sy = e.clientY;
     let draft = null, moved = false;
@@ -321,12 +421,21 @@ function wireSchedule() {
       const a = minAt(Math.min(startY, yIn(ev))), z = minAt(Math.max(startY, yIn(ev)));
       if (!draft) { draft = document.createElement('div'); draft.className = 'blk draft'; draft.style.left = '4px'; draft.style.right = '4px'; grid.appendChild(draft); }
       draft.style.top = a * PX_PER_MIN + 'px'; draft.style.height = Math.max(SNAP, z - a) * PX_PER_MIN + 'px';
-      draft.textContent = `${fmtMin(a)} to ${fmtMin(Math.max(z, a + SNAP))}`;
+      draft.textContent = `${fmtMin(a)} to ${fmtEnd(Math.max(z, a + SNAP))}`;
       draft.dataset.a = a; draft.dataset.z = Math.max(z, a + SNAP);
     };
     const up = () => {
       grid.removeEventListener('pointermove', move);
-      if (blk && !moved) return openBlock(blk.dataset.id);
+      if (blk && !moved) {
+        const id = blk.dataset.id;
+        if (blk.classList.contains('sugg')) {
+          return tapOrDouble(id, () => toast('Double-tap a faded shift to confirm it, or tap ✕ to dismiss it.'), () => {
+            const s = findSugg(id); if (!s) return;
+            confirmSugg(s); save(); render(); toast(`Confirmed: ${namesOf(s.people)}, ${fmtMin(s.start)} to ${fmtEnd(s.end)}.`);
+          });
+        }
+        return openBlock(id);
+      }
       if (blk) return;
       if (draft) return newShift(+draft.dataset.a, +draft.dataset.z);
       if (!moved) { const a = Math.floor(startY / PX_PER_MIN / 60) * 60; newShift(a, Math.min(1440, a + 60)); }
@@ -337,27 +446,20 @@ function wireSchedule() {
 }
 
 function newShift(start, end) {
-  const b = { id: uid(), start, end, people: [], daily: false, isNew: true };
+  const b = { id: uid(), date: viewDay, start, end, people: [], isNew: true };
   S.blocks.push(b); render(); openBlock(b.id);
 }
 
 function openBlock(id) {
   const b = S.blocks.find(x => x.id === id);
   if (!b) return;
-  if (b.sugg) {
-    return sheet(`<h2>${esc(namesOf(b.people))} usually covers this</h2>
-      <p class="muted">${fmtMin(b.start)} to ${fmtMin(b.end)}. Pip noticed ${esc(namesOf(b.people))} covered this time on most of the last 7 days.</p>
-      <button class="btn primary" data-act="sugg-yes" data-id="${b.id}">Confirm ${esc(namesOf(b.people))}</button>
-      <button class="btn quiet" data-act="sugg-no" data-id="${b.id}">Dismiss suggestion</button>`);
-  }
   const step = (edge, d) => `<button class="btn quiet" style="width:44px;min-height:44px;padding:0;display:inline-block" data-act="nudge" data-id="${b.id}" data-edge="${edge}" data-d="${d}">${d > 0 ? '+' : '−'}</button>`;
   sheet(`<h2>Who's on duty?</h2>
-    <p class="muted">Pick one or more. If two people share a shift, alerts go to both.</p>
+    <p class="muted">${esc(dayLabel(b.date))}. Pick one or more. If two people share a shift, alerts go to both.</p>
     <div class="picks">${S.people.map(p => `<button data-act="pick" data-id="${b.id}" data-p="${p.id}" class="${b.people.includes(p.id) ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>
     <div class="row"><span>Starts <b>${fmtMin(b.start)}</b></span><span>${step('start', -SNAP)} ${step('start', SNAP)}</span></div>
-    <div class="row" style="margin-top:8px"><span>Ends <b>${fmtMin(b.end)}</b></span><span>${step('end', -SNAP)} ${step('end', SNAP)}</span></div>
-    <label class="switch"><span>Same time every day</span><input type="checkbox" data-act="daily" data-id="${b.id}" ${b.daily ? 'checked' : ''}></label>
-    <button class="btn primary" data-act="block-done" data-id="${b.id}">Done</button>
+    <div class="row" style="margin-top:8px"><span>Ends <b>${fmtEnd(b.end)}</b></span><span>${step('end', -SNAP)} ${step('end', SNAP)}</span></div>
+    <button class="btn primary" data-act="block-done" data-id="${b.id}" style="margin-top:16px">Done</button>
     <button class="btn quiet" data-act="block-del" data-id="${b.id}">${b.isNew ? 'Cancel' : 'Delete shift'}</button>`, () => cleanupNew());
 }
 function cleanupNew() {
@@ -366,22 +468,120 @@ function cleanupNew() {
   save(); render();
 }
 
+/* ---------- Week view ---------- */
+const PERIODS = [['Night', 0, 420], ['Morning', 420, 720], ['Afternoon', 720, 1020], ['Evening', 1020, 1320], ['Late', 1320, 1440]];
+function weekTitle() {
+  const n = dayDiff(mondayOf(today()), viewWeek) / 7;
+  if (n === 0) return 'This week';
+  if (n === 1) return 'Next week';
+  if (n === -1) return 'Last week';
+  return 'Week of ' + new Date(viewWeek + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+function cellInfo(date, a, z) {
+  const mid = Math.floor((a + z) / 2);
+  const who = scheduledAt(date, mid);
+  const outs = [...new Set(awayOn(date).filter(x => x.start < z && a < x.end).map(x => x.person))];
+  const partial = !who.length && blocksOn(date).some(b => b.start < z && a < b.end);
+  const sugg = who.length ? null : suggestionsOn(date).find(s => s.start < z && a < s.end);
+  return { who, outs, sugg, partial };
+}
+function weekHTML() {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(viewWeek, i));
+  const t = today();
+  const allSugg = days.flatMap(d => suggestionsOn(d));
+  let h = `<div class="muted small">Tap a box to choose who's on duty, or who <b>can't</b>. <b>Faded boxes</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
+    <div class="week">
+      <div></div>${days.map(d => `<div class="wh${d === t ? ' today' : ''}" data-act="goday" data-date="${d}">${shortDay(d)[0]}${shortDay(d)[1]}<br><span>${new Date(d + 'T12:00:00').getDate()}</span></div>`).join('')}`;
+  PERIODS.forEach(([label, a, z]) => {
+    h += `<div class="h">${label}<br><span>${fmtMin(a).replace(' ', '')}</span></div>`;
+    days.forEach(d => {
+      const c = cellInfo(d, a, z), past = dayDiff(t, d) < 0;
+      const outTxt = c.outs.length ? `<i>✕${c.outs.map(id => esc(nameOf(id)[0])).join('')}</i>` : '';
+      const key = `${d}|${a}`;
+      if (c.who.length) h += `<button class="wc ${c.who.length > 1 ? 'p-multi' : pClass(c.who[0])}${past ? ' past' : ''}" data-cell="${key}">${c.who.map(id => esc(nameOf(id)[0])).join('+')}${outTxt}</button>`;
+      else if (c.sugg) h += `<button class="wc sugg" data-cell="${key}" data-sugg="${esc(c.sugg.id)}">${c.sugg.people.map(id => esc(nameOf(id)[0])).join('+')}?${outTxt}</button>`;
+      else h += `<button class="wc open${past ? ' past' : ''}" data-cell="${key}">${c.partial ? 'part' : 'open'}${outTxt}</button>`;
+    });
+  });
+  h += `</div>
+    <p class="muted small">M = Mom, D = Dad, N = Nan. M+D = both on duty. ✕M = Mom can't for part of that time. "Open" = no one assigned, so alerts go to everyone who's free.</p>
+    ${allSugg.length ? `<button class="btn quiet tool" data-act="accept-week">✓ Confirm all ${allSugg.length} faded shifts this week</button>` : ''}
+    <button class="btn quiet tool" data-act="repeat-week" style="margin-top:8px">↻ Copy this week to next week</button>`;
+  return h;
+}
+function wireWeek() {
+  document.querySelectorAll('.wc').forEach(el => el.addEventListener('click', () => {
+    const [date, a] = el.dataset.cell.split('|');
+    const P = PERIODS.find(p => p[1] === +a);
+    if (el.dataset.sugg) {
+      return tapOrDouble(el.dataset.cell, () => openCell(date, P), () => {
+        suggestionsOn(date).filter(s => s.start < P[2] && P[1] < s.end).forEach(confirmSugg);
+        save(); render(); toast(`Confirmed ${shortDay(date)} ${P[0].toLowerCase()}.`);
+      });
+    }
+    openCell(date, P);
+  }));
+}
+let cellDraft = null;
+function openCell(date, P) {
+  const [label, a, z] = P;
+  if (!cellDraft || cellDraft.date !== date || cellDraft.a !== a) {
+    const c = cellInfo(date, a, z);
+    cellDraft = { date, a, z, label, who: c.who.length ? c.who : [], outs: c.outs };
+  }
+  const d = cellDraft;
+  const c = cellInfo(date, a, z);
+  sheet(`<h2>${esc(dayLabel(date))}, ${label.toLowerCase()}</h2>
+    <p class="muted" style="margin-top:0">${fmtMin(a)} to ${fmtEnd(z)}</p>
+    ${c.sugg ? `<div class="note small">Pip suggests <b>${esc(namesOf(c.sugg.people))}</b> (covered this time on ${c.sugg.seen} recent days). <button class="link" data-act="cell-sugg">Use it</button></div>` : ''}
+    <div class="label">On duty</div>
+    <div class="picks">${S.people.map(p => `<button data-act="cell-who" data-p="${p.id}" class="${d.who.includes(p.id) ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>
+    <div class="label">Can't do it</div>
+    <div class="picks">${S.people.map(p => `<button data-act="cell-out" data-p="${p.id}" class="not ${d.outs.includes(p.id) ? 'on' : ''}">Not ${esc(p.name)}</button>`).join('')}</div>
+    <button class="btn primary" data-act="cell-save">Save</button>
+    <button class="btn quiet" data-act="cell-clear">Clear this time</button>`, () => { cellDraft = null; });
+}
+
+/* ---------- "Not Mom" quick unavailability ---------- */
+let awayDraft = null;
+function openAway(date) {
+  const t = today();
+  date = date || t;
+  if (!awayDraft) {
+    const m = date === t ? Math.floor(nowMin() / SNAP) * SNAP : 540;
+    awayDraft = { date, who: [S.me], start: m, end: Math.min(1440, m + 120) };
+  }
+  const d = awayDraft;
+  const quick = date === t ? [['Next hour', 60], ['Next 2 hrs', 120], ['Rest of today', 'rest']] : [['Morning', [420, 720]], ['Afternoon', [720, 1020]], ['Evening', [1020, 1320]], ['All day', [0, 1440]]];
+  const step = (edge, dd) => `<button class="btn quiet" style="width:44px;min-height:44px;padding:0;display:inline-block" data-act="away-nudge" data-edge="${edge}" data-d="${dd}">${dd > 0 ? '+' : '−'}</button>`;
+  const list = awayOn(date);
+  sheet(`<h2>Who can't be on duty?</h2>
+    <p class="muted" style="margin-top:0">${esc(dayLabel(date))}. Pip won't alert them then, and passes alerts to whoever is free.</p>
+    <div class="picks">${S.people.map(p => `<button data-act="away-who" data-p="${p.id}" class="not ${d.who.includes(p.id) ? 'on' : ''}">Not ${esc(p.name)}</button>`).join('')}</div>
+    <div class="label">When</div>
+    <div class="picks">${quick.map(([l, v]) => `<button data-act="away-quick" data-v="${Array.isArray(v) ? v.join(',') : v}">${l}</button>`).join('')}</div>
+    <div class="row"><span>From <b>${fmtMin(d.start)}</b></span><span>${step('start', -SNAP)} ${step('start', SNAP)}</span></div>
+    <div class="row" style="margin-top:8px"><span>Until <b>${fmtEnd(d.end)}</b></span><span>${step('end', -SNAP)} ${step('end', SNAP)}</span></div>
+    <button class="btn primary" data-act="away-save" style="margin-top:16px">Save</button>
+    ${list.length ? `<div class="label" style="margin-top:16px">Already marked</div>${list.map(x => `<div class="row" style="min-height:44px"><span>Not ${esc(nameOf(x.person))}, ${fmtMin(x.start)} to ${fmtEnd(x.end)}</span><button class="link" data-act="away-del" data-id="${x.id}">Remove</button></div>`).join('')}` : ''}
+    <button class="btn quiet" data-act="close" style="margin-top:8px">Cancel</button>`, () => { awayDraft = null; });
+}
+
 /* ---------- Team ---------- */
 function teamHTML() {
   const colors = ['#dfe3f6', '#d6ebff', '#efe7e1', '#e8f0e4', '#f6e8ef'];
-  let h = `<div class="top"><h1>Team</h1></div>
+  return `<div class="top"><h1>Team</h1></div>
     <p class="muted" style="margin-top:0">Backup order: if the person on duty can't come, Pip asks the next person down the list.</p>
     <div class="card">${S.people.map((p, i) => `<div class="person">
       <div class="av" style="background:${colors[i % colors.length]}">${esc(p.name[0] || '?')}</div>
       <div class="grow"><div class="mid" style="font-size:17px">${i + 1}. ${esc(p.name)}${p.id === S.me ? ' (you)' : ''}</div>
-      <div class="muted small">${p.admin ? 'Admin' : p.role ? esc(p.role) : 'Caregiver'}</div></div>
+      <div class="muted small">${p.admin ? 'Admin' : p.role ? esc(p.role) : 'Caregiver'}${isAway(p.id) ? ' · not available now' : ''}</div></div>
       <div class="ord"><button data-act="up" data-p="${p.id}" aria-label="Move up">↑</button><button data-act="down" data-p="${p.id}" aria-label="Move down">↓</button>
       ${p.admin ? '' : `<button data-act="remove" data-p="${p.id}" aria-label="Remove">✕</button>`}</div></div>`).join('')}</div>
     <div class="card"><div class="label">Invite a caregiver</div>
       <input type="text" id="newName" placeholder="Name, for example Grandpa" maxlength="20">
       <button class="btn primary" data-act="invite" style="margin-top:10px">Add to team</button>
       <p class="muted small">In this prototype, adding someone is instant. In the real app they'd get an invite link and their own login.</p></div>`;
-  return h;
 }
 
 /* ---------- Settings ---------- */
@@ -426,30 +626,30 @@ function simulate(kind) {
 }
 
 /* ---------- Alert logic ---------- */
-function allIds() { return S.people.map(p => p.id); }
 function triggerAlert() {
   const duty = onDutyAt(nowMin());
-  const to = duty.length ? duty : allIds();
+  const free = available();
+  const to = duty.length ? duty : (free.length ? free : allIds());
   S.alert = { detectedAt: Date.now(), firstTo: to.slice(), to: to.slice(), tried: to.slice(), everyone: !duty.length, from: null, deadline: Date.now() + handoffSec() * 1000 };
   S.pip.led = true;
   S.log.push({ t: Date.now(), ev: 'soiled', to: namesOf(to) });
   save(); render();
 }
+function nextInLine(a) { return allIds().find(id => !a.tried.includes(id) && !isAway(id)); }
 function passOn(reason, byId) {
   const a = S.alert; if (!a) return;
-  if (reason === 'cant' && a.to.length > 1 && !a.everyone) {
-    a.to = a.to.filter(id => id !== byId); save(); render(); return toast(`OK. ${namesOf(a.to)} still has it.`);
+  if (reason === 'cant' && a.to.length > 1) {
+    a.to = a.to.filter(id => id !== byId); save(); render(); return toast(`OK. ${namesOf(a.to)} still ${a.to.length > 1 ? 'have' : 'has'} it.`);
   }
   if (a.everyone && reason === 'timeout') { a.deadline = Date.now() + handoffSec() * 1000; save(); return; }
-  const prev = a.to.slice();
-  a.from = { names: namesOf(prev), reason };
-  const next = S.people.map(p => p.id).find(id => !a.tried.includes(id));
+  a.from = { names: namesOf(a.to), reason };
+  const next = nextInLine(a);
   if (next && !a.everyone) { a.to = [next]; a.tried.push(next); }
-  else { a.to = allIds(); a.everyone = true; }
+  else { const free = available().filter(id => id !== byId); a.to = free.length ? free : allIds(); a.everyone = true; }
   a.deadline = Date.now() + handoffSec() * 1000;
   S.log.push({ t: Date.now(), ev: 'handoff', from: a.from.names, to: namesOf(a.to), reason });
   save(); render();
-  if (reason === 'cant') toast(a.everyone ? 'No one else is free, so Pip is alerting everyone.' : `Passed to ${namesOf(a.to)}.`);
+  if (reason === 'cant') toast(a.everyone ? 'No one else is next in line, so Pip is alerting everyone who is free.' : `Passed to ${namesOf(a.to)}.`);
 }
 function changed(byId) {
   const a = S.alert; if (!a) return;
@@ -457,8 +657,7 @@ function changed(byId) {
   S.lastChanged = t; S.poops.push(t);
   if (S.settings.tracking) S.history.push(t);
   const byName = byId ? nameOf(byId) : 'Someone';
-  const missed = a.firstTo.filter(id => id !== byId);
-  if (byId && !a.firstTo.includes(byId)) S.handled = { for: missed, text: `${byName} changed ${S.baby} at ${fmtTime(t)}.` };
+  if (byId && !a.firstTo.includes(byId)) S.handled = { for: a.firstTo.slice(), text: `${byName} changed ${S.baby} at ${fmtTime(t)}.` };
   else if (!byId) S.handled = { for: allIds(), text: `${S.baby} was changed at ${fmtTime(t)} (Pip button pressed).` };
   S.log.push({ t, ev: 'changed', by: byName, handedOff: !!a.from });
   S.alert = null; S.pip.led = false;
@@ -479,9 +678,9 @@ function renderAlert() {
   el.classList.toggle('night', isNight());
   if (!show) { stopChime(); return; }
   const left = (a.deadline - Date.now()) / 1000;
-  const nextId = S.people.map(p => p.id).find(id => !a.tried.includes(id));
+  const nextId = nextInLine(a);
   let passTxt;
-  if (a.everyone) passTxt = 'Everyone is being alerted until someone answers.';
+  if (a.everyone) passTxt = 'Everyone who is free is being alerted until someone answers.';
   else if (a.to.length > 1) passTxt = `${namesOf(a.to)} are both being alerted.`;
   else passTxt = nextId ? `Passes to ${nameOf(nextId)} in ${mmss(left)} if no answer` : `Alerts everyone in ${mmss(left)} if no answer`;
   const why = a.from ? `${a.from.names} ${a.from.reason === 'cant' ? "can't right now" : "didn't answer"}` : null;
@@ -540,15 +739,81 @@ document.addEventListener('click', e => {
     case 'handled-ok': S.handled.for = S.handled.for.filter(x => x !== S.me); if (!S.handled.for.length) S.handled = null; save(); render(); break;
     case 'settings': openSettings(); break;
     case 'close': closeSheet(); break;
-    case 'view': weekView = t.dataset.v === 'week'; render(); break;
-    case 'add': { const m = Math.floor(nowMin() / 60) * 60; newShift(m, Math.min(1440, m + 120)); break; }
-    case 'repeat': S.blocks.forEach(b => { if (!b.sugg) b.daily = true; }); save(); render(); toast('Done. These shifts now repeat every day.'); break;
-    case 'pick': { const p = t.dataset.p; blk.people = blk.people.includes(p) ? blk.people.filter(x => x !== p) : [...blk.people, p]; delete blk.isNew; save(); render(); openBlock(id); break; }
+    case 'view': weekView = t.dataset.v === 'week'; if (weekView) viewWeek = mondayOf(viewDay); render(); break;
+    case 'nav': {
+      const d = +t.dataset.d;
+      if (weekView) viewWeek = addDays(viewWeek, 7 * d); else viewDay = addDays(viewDay, d);
+      render(); break;
+    }
+    case 'goday': viewDay = t.dataset.date; weekView = false; render(); break;
+    case 'repeat-day': {
+      const src = blocksOn(viewDay);
+      for (let i = 1; i <= 6; i++) {
+        const d = addDays(viewDay, i);
+        S.blocks = S.blocks.filter(b => b.date !== d);
+        src.forEach(b => S.blocks.push({ ...b, id: uid(), date: d }));
+      }
+      save(); render(); toast(`Copied ${dayLabel(viewDay).toLowerCase()} to the next 6 days.`); break;
+    }
+    case 'accept-day': suggestionsOn(viewDay).forEach(confirmSugg); save(); render(); toast('All faded shifts confirmed.'); break;
+    case 'accept-week': for (let i = 0; i < 7; i++) suggestionsOn(addDays(viewWeek, i)).forEach(confirmSugg); save(); render(); toast('All faded shifts this week confirmed.'); break;
+    case 'repeat-week': {
+      for (let i = 0; i < 7; i++) {
+        const src = addDays(viewWeek, i), dst = addDays(viewWeek, i + 7);
+        S.blocks = S.blocks.filter(b => b.date !== dst);
+        blocksOn(src).forEach(b => S.blocks.push({ ...b, id: uid(), date: dst }));
+      }
+      save(); render(); toast('Copied this week to next week.'); break;
+    }
+    case 'sugg-no': { const s = findSugg(id); if (s) S.dismissed.push(s.key); save(); render(); toast('Suggestion dismissed.'); break; }
+    case 'pick': { const p = t.dataset.p; blk.people = blk.people.includes(p) ? blk.people.filter(x => x !== p) : [...blk.people, p]; save(); render(); openBlock(id); break; }
     case 'nudge': { const d = +t.dataset.d; if (t.dataset.edge === 'start') blk.start = Math.max(0, Math.min(blk.end - SNAP, blk.start + d)); else blk.end = Math.min(1440, Math.max(blk.start + SNAP, blk.end + d)); save(); render(); openBlock(id); break; }
     case 'block-done': if (!blk.people.length) { toast('Pick who is on duty first.'); break; } delete blk.isNew; closeSheet(); break;
     case 'block-del': S.blocks = S.blocks.filter(b => b.id !== id); closeSheet(); break;
-    case 'sugg-yes': blk.sugg = false; blk.daily = true; save(); closeSheet(); toast(`Confirmed. ${namesOf(blk.people)} is on duty then.`); break;
-    case 'sugg-no': S.blocks = S.blocks.filter(b => b.id !== id); save(); closeSheet(); break;
+    case 'cell-who': case 'cell-out': {
+      const p = t.dataset.p, list = act === 'cell-who' ? 'who' : 'outs';
+      cellDraft[list] = cellDraft[list].includes(p) ? cellDraft[list].filter(x => x !== p) : [...cellDraft[list], p];
+      if (act === 'cell-out' && cellDraft.outs.includes(p)) cellDraft.who = cellDraft.who.filter(x => x !== p);
+      if (act === 'cell-who' && cellDraft.who.includes(p)) cellDraft.outs = cellDraft.outs.filter(x => x !== p);
+      openCell(cellDraft.date, PERIODS.find(x => x[1] === cellDraft.a)); break;
+    }
+    case 'cell-sugg': { const c = cellInfo(cellDraft.date, cellDraft.a, cellDraft.z); if (c.sugg) cellDraft.who = c.sugg.people.slice(); openCell(cellDraft.date, PERIODS.find(x => x[1] === cellDraft.a)); break; }
+    case 'cell-save': case 'cell-clear': {
+      const d = cellDraft, clear = act === 'cell-clear';
+      setRange(d.date, d.a, d.z, clear ? [] : d.who);
+      S.away = S.away.filter(x => !(x.date === d.date && x.start < d.z && d.a < x.end && (clear || !d.outs.includes(x.person))));
+      if (!clear) d.outs.filter(p => !S.away.some(x => x.date === d.date && x.person === p && x.start <= d.a && d.z <= x.end)).forEach(p => S.away.push({ id: uid(), date: d.date, start: d.a, end: d.z, person: p }));
+      if (clear) S.dismissed.push(...suggestionsOn(d.date).filter(s => s.start < d.z && d.a < s.end).map(s => s.key));
+      save(); closeSheet(); render(); break;
+    }
+    case 'away': awayDraft = null; openAway(t.dataset.date); break;
+    case 'away-who': { const p = t.dataset.p; awayDraft.who = awayDraft.who.includes(p) ? awayDraft.who.filter(x => x !== p) : [...awayDraft.who, p]; openAway(awayDraft.date); break; }
+    case 'away-quick': {
+      const v = t.dataset.v, m = Math.floor(nowMin() / SNAP) * SNAP;
+      if (v === 'rest') { awayDraft.start = m; awayDraft.end = 1440; }
+      else if (v.includes(',')) { const [a, z] = v.split(',').map(Number); awayDraft.start = a; awayDraft.end = z; }
+      else { awayDraft.start = m; awayDraft.end = Math.min(1440, m + +v); }
+      openAway(awayDraft.date); break;
+    }
+    case 'away-nudge': { const d = +t.dataset.d; if (t.dataset.edge === 'start') awayDraft.start = Math.max(0, Math.min(awayDraft.end - SNAP, awayDraft.start + d)); else awayDraft.end = Math.min(1440, Math.max(awayDraft.start + SNAP, awayDraft.end + d)); openAway(awayDraft.date); break; }
+    case 'away-save': {
+      const d = awayDraft;
+      if (!d.who.length) { toast('Pick who can\'t first.'); break; }
+      setAwayRange(d.date, d.start, d.end, d.who);
+      save(); closeSheet(); render();
+      const left = available(d.date, d.start);
+      toast(`Got it: not ${namesOf(d.who)}, ${fmtMin(d.start)} to ${fmtEnd(d.end)}. ${left.length ? `Alerts go to ${namesOf(onDutyAt(d.start, d.date).length ? onDutyAt(d.start, d.date) : left)}.` : ''}`);
+      if (S.alert) S.alert.to = S.alert.to.filter(x => !d.who.includes(x) || !isAway(x));
+      if (S.alert && !S.alert.to.length) passOn('cant', null);
+      break;
+    }
+    case 'away-del': S.away = S.away.filter(x => x.id !== id); save(); render(); openAway(awayDraft ? awayDraft.date : today()); break;
+    case 'cover': {
+      const p = t.dataset.p, td = today(), m = nowMin();
+      const ends = awayOn(td).filter(x => x.start <= m && m < x.end).map(x => x.end);
+      setRange(td, Math.floor(m / SNAP) * SNAP, Math.min(...ends), [p]);
+      save(); render(); toast(`${nameOf(p)} is covering now.`); break;
+    }
     case 'up': case 'down': {
       const i = S.people.findIndex(p => p.id === t.dataset.p), j = act === 'up' ? i - 1 : i + 1;
       if (j >= 0 && j < S.people.length) { [S.people[i], S.people[j]] = [S.people[j], S.people[i]]; save(); render(); }
@@ -559,6 +824,7 @@ document.addEventListener('click', e => {
       S.people = S.people.filter(x => x.id !== p);
       S.blocks.forEach(b => b.people = b.people.filter(x => x !== p));
       S.blocks = S.blocks.filter(b => b.people.length);
+      S.away = S.away.filter(x => x.person !== p);
       if (S.me === p) S.me = S.people[0].id;
       save(); render(); break;
     }
@@ -570,7 +836,7 @@ document.addEventListener('click', e => {
     case 'set-demo': S.settings.demo = t.checked; save(); break;
     case 'set-track': S.settings.tracking = t.checked; if (!t.checked) S.history = []; save(); openSettings(); break;
     case 'set-night': S.settings.night = t.dataset.v; save(); render(); openSettings(); break;
-    case 'reset': localStorage.removeItem(KEY); S = sampleState(); sensing = null; save(); closeSheet(); tab = 'home'; render(); toast('Demo data reset.'); break;
+    case 'reset': localStorage.removeItem(KEY); S = sampleState(); sensing = null; viewDay = today(); viewWeek = mondayOf(today()); save(); closeSheet(); tab = 'home'; render(); toast('Demo data reset.'); break;
     case 'sim': openSim(); break;
     case 'sim-soiled': simulate('soiled'); break;
     case 'sim-gas': simulate('gas'); break;
