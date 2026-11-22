@@ -202,3 +202,25 @@ main{padding-bottom:130px}
 .demo-answer .lbl{grid-column:1/-1;color:#fff;font-weight:800;font-size:13px;display:flex;align-items:center;gap:8px}
 .demo-answer .lbl span{font-size:10px;letter-spacing:.08em;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:2px 6px}
 .demo-answer button{min-height:44px;border-radius:10px;background:#fff;color:var(--twilight);font-weight:800;font-size:14px}
+
+/* Round 2: Not-X marker (deep red alert), faded once someone else covers */
+:root{--notred:#A4161A}
+.notpill{display:inline-flex;align-items:center;gap:4px;background:var(--notred);color:#fff;font-weight:800;border-radius:999px;padding:2px 8px 2px 2px;white-space:nowrap}
+.notpill i{font-style:normal;width:16px;height:16px;border-radius:50%;background:#fff;color:var(--notred);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900}
+.away{border-left:3px solid var(--notred);background:repeating-linear-gradient(135deg,rgba(164,22,26,.14) 0 6px,rgba(164,22,26,0) 6px 12px)}
+.away span.notpill{position:absolute;top:4px;right:6px;border:0;font-size:11px;color:#fff;background:var(--notred);padding:2px 8px 2px 2px}
+.away.covered,.wa.covered{opacity:.4}
+.wa{border-left:2px solid var(--notred);background:repeating-linear-gradient(135deg,rgba(164,22,26,.18) 0 4px,rgba(164,22,26,0) 4px 8px);width:100%;text-align:left;padding:0}
+.wa .notpill{font-size:7.5px;padding:1px 4px 1px 1px;gap:2px;margin:1px 0 0 1px;max-width:calc(100% - 2px);overflow:hidden}
+.wa .notpill i{width:10px;height:10px;font-size:8px}
+.wb{font-size:8.5px;line-height:1.15;padding:2px 1px 0;word-break:normal;overflow-wrap:anywhere}
+.legend{display:flex;flex-direction:column;gap:6px;margin:8px 0 10px;color:var(--taupe-text)}
+.legend .notpill{font-size:10px;margin-right:4px}
+.legend .swatch{display:inline-block;width:18px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:6px}
+.legend .swatch.sugg{border:1.5px dashed rgba(151,126,110,.8);background:#fff}
+/* Pip can't read: never shows Clean */
+.status.unknown{background:#EFEDEA;border:1.5px dashed #977E6E}
+.status.unknown .big{letter-spacing:.1em;color:var(--taupe-text)}
+.pack{background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px 12px}
+.pack .row{min-height:40px;border-bottom:1px solid var(--line)}
+.pack .row:last-child{border-bottom:0}
