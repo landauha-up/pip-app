@@ -559,9 +559,8 @@ function weekHTML() {
         }).join('')}
       </div>
     </div>
-    <div class="legend small"><span><span class="swatch sugg"></span>Faded = not confirmed yet: a guess from past weeks, or ${esc(fullNames(coreIds()))} by default</span>
-      <span><span class="notpill"><i>!</i>Mom</span> Mom is unavailable then. It fades once someone else is on duty.</span>
-      <span><b>No one confirmed?</b> Pip alerts both main caregivers, ${esc(fullNames(coreIds()))}.</span></div>
+    <div class="legend small"><span><span class="swatch sugg"></span>Faded = not confirmed yet. If no one is confirmed, Pip alerts both ${esc(fullNames(coreIds()))}.</span>
+      <span><span class="notpill"><i>!</i>Mom</span> Mom is unavailable then. It fades once someone else is on duty.</span></div>
     ${allSugg.length ? `<button class="btn quiet tool" data-act="accept-week">✓ Confirm all ${allSugg.length} faded shifts this week</button>` : ''}
     <button class="btn quiet tool" data-act="repeat-week" style="margin-top:8px">↻ Copy this week to next week</button>`;
   return h;
