@@ -224,3 +224,6 @@ main{padding-bottom:130px}
 .pack{background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px 12px}
 .pack .row{min-height:40px;border-bottom:1px solid var(--line)}
 .pack .row:last-child{border-bottom:0}
+
+.strip .dflt{opacity:.45;background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.6) 0 4px,transparent 4px 8px)}
+.strip > div{white-space:nowrap;overflow:hidden}

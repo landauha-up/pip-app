@@ -39,11 +39,11 @@ function sampleState() {
   const H = (h, m = 0) => h * 60 + m;
   const WEEK = {
     0: [[0, H(8, 30), ['dad']], [H(8, 30), H(13), ['mom']], [H(13), H(18), ['dad']], [H(18), H(22), ['dad', 'mom']], [H(22), 1440, ['mom']]],                              // Sun
-    1: [[0, H(6, 30), ['mom']], [H(6, 30), H(12, 15), ['dad']], [H(12, 15), H(17), ['nan']], [H(18), H(21, 30), ['dad', 'mom']], [H(21, 30), 1440, ['mom']]],             // Mon
+    1: [[0, H(6, 30), ['mom']], [H(6, 30), H(12, 15), ['dad']], [H(12, 15), H(17), ['nan']], [H(17), H(21, 30), ['dad', 'mom']], [H(21, 30), 1440, ['mom']]],             // Mon
     2: [[0, H(7), ['mom']], [H(7), H(11, 30), ['dad']], [H(11, 30), H(17), ['nan']], [H(17), H(22), ['dad', 'mom']], [H(22), 1440, ['mom']]],                               // Tue
     3: [[0, H(7, 30), ['mom']], [H(7, 30), H(13), ['dad']], [H(13), H(18, 30), ['nan']], [H(18, 30), H(22, 30), ['dad', 'mom']], [H(22, 30), 1440, ['mom']]],              // Wed
     4: [[0, H(6, 45), ['mom']], [H(6, 45), H(10, 30), ['dad']], [H(10, 30), H(16, 30), ['nan']], [H(16, 30), H(21), ['dad', 'mom']], [H(21), 1440, ['dad']]],            // Thu
-    5: [[0, H(7), ['mom']], [H(7), H(12), ['dad']], [H(12), H(16), ['nan']], [H(18), H(23), ['dad', 'mom']], [H(23), 1440, ['mom']]],                                    // Fri
+    5: [[0, H(7), ['mom']], [H(7), H(12), ['dad']], [H(12), H(16), ['nan']], [H(16), H(18), ['dad']], [H(18), H(23), ['dad', 'mom']], [H(23), 1440, ['mom']]],                                    // Fri
     6: [[0, H(8), ['mom']], [H(8), H(13, 30), ['dad']], [H(13, 30), H(19), ['mom']], [H(19), H(23), ['dad', 'mom']], [H(23), 1440, ['dad']]],                             // Sat
   };
   // Three weeks of history plus today, so Pip can learn each weekday's pattern
@@ -318,9 +318,12 @@ function stripHTML() {
     segs.push({ a, z, who, key: who.join() });
   }
   return `<div class="strip">${segs.map(s => {
-    const cls = s.who.length === 0 ? 'gap' : s.who.length > 1 ? 'p-multi' : pClass(s.who[0]);
+    // No one planned: faded default, because both main caregivers get the alerts then
+    const cls = s.who.length === 0 ? 'p-multi dflt' : s.who.length > 1 ? 'p-multi' : pClass(s.who[0]);
     const now = m >= s.a && m < s.z ? ' now' : '';
-    return `<div class="${cls}${now}" style="flex:${s.z - s.a}" title="${fmtMin(s.a)} to ${fmtEnd(s.z)}">${s.z - s.a >= 150 ? (s.who.length ? esc(namesOf(s.who)) : 'open') : ''}</div>`;
+    const label = s.who.length ? namesOf(s.who) : namesOf(coreIds());
+    const fits = (s.z - s.a) * 0.22 >= label.length * 6.2 + 10;
+    return `<div class="${cls}${now}" style="flex:${s.z - s.a}" title="${fmtMin(s.a)} to ${fmtEnd(s.z)}${s.who.length ? '' : ' · no one planned, both alerted'}">${fits ? esc(label) : ''}</div>`;
   }).join('')}</div>
   <div class="row small muted" style="margin-top:4px"><span>12 am</span><span>noon</span><span>12 am</span></div>`;
 }
@@ -416,7 +419,7 @@ function dayHTML() {
   const sugg = fadedOn(viewDay);
   const all = [...blocksOn(viewDay), ...sugg];
   const pos = layoutCols(all);
-  let h = `<div class="muted small">Tap an empty time to add a shift. Drag the bar on a shift's edge to stretch it. On upcoming days, <b>faded shifts</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
+  let h = `<div class="muted small">Tap a shift to change who's on it. Drag the bar on a shift's edge to stretch it. <b>Faded shifts</b> aren't confirmed yet (Pip's guess from past weeks, or both parents by default): <b>double-tap</b> to confirm.</div>
     <div class="row" style="margin-top:10px;gap:8px">
       <button class="btn quiet tool" data-act="away" data-date="${viewDay}">✕ Someone can't</button>
       <button class="btn quiet tool" data-act="repeat-day">↻ Same every day</button>
@@ -539,7 +542,7 @@ function weekHTML() {
   const t = today();
   const allSugg = days.flatMap(d => fadedOn(d)).filter(s => dayDiff(t, s.date) >= 0);
   const H = 1440 * WPX;
-  let h = `<div class="muted small">Tap an empty time to add a shift, or tap a shift to change it. On upcoming days, <b>faded shifts</b> are Pip's guesses from past weeks: <b>double-tap</b> to confirm.</div>
+  let h = `<div class="muted small">Tap a shift to change who's on it. <b>Faded shifts</b> aren't confirmed yet: <b>double-tap</b> to confirm.</div>
     <div class="wk" id="wk">
       <div class="wk-head"><div></div>${days.map(d => `<button class="wh${d === t ? ' today' : ''}" data-act="goday" data-date="${d}">${shortDay(d)}<br><b>${new Date(d + 'T12:00:00').getDate()}</b></button>`).join('')}</div>
       <div class="wk-body" id="wkBody">
