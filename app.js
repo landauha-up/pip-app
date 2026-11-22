@@ -412,14 +412,14 @@ function blockHTML(b, pos) {
   return `<div class="blk ${blockClass(b)}" data-id="${esc(b.id)}" style="top:${top}px;height:${ht}px;left:calc(${l}% + 4px);width:calc(${w}% - 8px)">
     <div class="h top" data-edge="start"></div>
     ${label}<div class="t tt">${fmtMin(b.start)} to ${fmtEnd(b.end)}</div>
-    ${b.sugg ? `<div class="t">${b.dflt ? 'no one planned yet, so both are alerted' : 'suggested from past weeks'} · double-tap to confirm</div>${awayOn(b.date).filter(x => b.people.includes(x.person) && x.start < b.end && b.start < x.end).map(x => `<div class="t"><b>${esc(nameOf(x.person))} is busy ${fmtMin(x.start)} to ${fmtEnd(x.end)}</b></div>`).join('')}${b.dflt ? '' : `<button class="x" data-act="sugg-no" data-id="${esc(b.id)}" aria-label="Dismiss suggestion">✕</button>`}` : ''}
+    ${b.sugg ? `<div class="t">${b.dflt ? `no one confirmed, so ${esc(fullNames(coreIds()))} both get alerts` : 'suggested from past weeks'} · double-tap to confirm</div>${awayOn(b.date).filter(x => b.people.includes(x.person) && x.start < b.end && b.start < x.end).map(x => `<div class="t"><b>${esc(nameOf(x.person))} is busy ${fmtMin(x.start)} to ${fmtEnd(x.end)}</b></div>`).join('')}${b.dflt ? '' : `<button class="x" data-act="sugg-no" data-id="${esc(b.id)}" aria-label="Dismiss suggestion">✕</button>`}` : ''}
     <div class="h bot" data-edge="end"></div></div>`;
 }
 function dayHTML() {
   const sugg = fadedOn(viewDay);
   const all = [...blocksOn(viewDay), ...sugg];
   const pos = layoutCols(all);
-  let h = `<div class="muted small">Tap a shift to change who's on it. Drag the bar on a shift's edge to stretch it. <b>Faded shifts</b> aren't confirmed yet (Pip's guess from past weeks, or both parents by default): <b>double-tap</b> to confirm.</div>
+  let h = `<div class="muted small">Tap a shift to change who's on it. Drag the bar on a shift's edge to stretch it. <b>Faded shifts</b> aren't confirmed yet: <b>double-tap</b> to confirm. If no one is confirmed for a time, Pip alerts both ${esc(fullNames(coreIds()))}.</div>
     <div class="row" style="margin-top:10px;gap:8px">
       <button class="btn quiet tool" data-act="away" data-date="${viewDay}">✕ Someone can't</button>
       <button class="btn quiet tool" data-act="repeat-day">↻ Same every day</button>
@@ -428,7 +428,7 @@ function dayHTML() {
   h += `<div class="tl" id="tl"><div class="hours">${Array.from({ length: 24 }, (_, i) => `<div>${fmtMin(i * 60)}</div>`).join('')}</div>
     <div class="grid" id="grid" style="height:${1440 * PX_PER_MIN}px">
       ${all.map(b => blockHTML(b, pos.get(b.id))).join('')}
-      ${awayOn(viewDay).map(a => { const cov = coveredBy(a); return `<div class="away${cov.length ? ' covered' : ''}" style="top:${a.start * PX_PER_MIN}px;height:${(a.end - a.start) * PX_PER_MIN}px"><span class="notpill"><i>!</i>Not ${esc(nameOf(a.person))}${a.source ? ` (${esc(a.source.split(' ')[0])})` : ''}${cov.length ? ` · ${esc(fullNames(cov))} covering` : ''}</span></div>`; }).join('')}
+      ${awayOn(viewDay).map(a => { const cov = coveredBy(a); return `<div class="away${cov.length ? ' covered' : ''}" style="top:${a.start * PX_PER_MIN}px;height:${(a.end - a.start) * PX_PER_MIN}px"><span class="notpill"><i>!</i>${esc(nameOf(a.person))} unavailable${a.source ? ` (${esc(a.source.split(' ')[0])})` : ''}</span></div>`; }).join('')}
       ${viewDay === today() ? `<div class="nowline" style="top:${nowMin() * PX_PER_MIN}px"></div>` : ''}
     </div></div>`;
   return h;
@@ -553,14 +553,15 @@ function weekHTML() {
           return `<div class="wk-col${dayDiff(t, d) < 0 ? ' past' : ''}" data-date="${d}" style="height:${H}px">
             ${bs.map(b => { const p = pos.get(b.id), w = 100 / p.n;
               return `<div class="wb ${blockClass(b)}" data-id="${esc(b.id)}" style="top:${b.start * WPX}px;height:${Math.max(10, (b.end - b.start) * WPX)}px;left:calc(${p.col * w}% + 1px);width:calc(${w}% - 2px)">${esc(fullNames(b.people))}${b.sugg ? '?' : ''}</div>`; }).join('')}
-            ${awayOn(d).map(a => `<div class="wa${coveredBy(a).length ? ' covered' : ''}" style="top:${a.start * WPX}px;height:${(a.end - a.start) * WPX}px" title="Not ${esc(nameOf(a.person))}"><span class="notpill"><i>!</i>Not ${esc(nameOf(a.person))}</span></div>`).join('')}
+            ${awayOn(d).map(a => `<div class="wa${coveredBy(a).length ? ' covered' : ''}" style="top:${a.start * WPX}px;height:${(a.end - a.start) * WPX}px" title="${esc(nameOf(a.person))} unavailable"><span class="notpill"><i>!</i>${esc(nameOf(a.person))}</span></div>`).join('')}
             ${d === t ? `<div class="nowline" style="top:${nowMin() * WPX}px"></div>` : ''}
           </div>`;
         }).join('')}
       </div>
     </div>
     <div class="legend small"><span><span class="swatch sugg"></span>Faded = not confirmed yet: a guess from past weeks, or ${esc(fullNames(coreIds()))} by default</span>
-      <span><span class="notpill"><i>!</i>Not Mom</span> Mom can't then. It fades once someone else is on duty.</span></div>
+      <span><span class="notpill"><i>!</i>Mom</span> Mom is unavailable then. It fades once someone else is on duty.</span>
+      <span><b>No one confirmed?</b> Pip alerts both main caregivers, ${esc(fullNames(coreIds()))}.</span></div>
     ${allSugg.length ? `<button class="btn quiet tool" data-act="accept-week">✓ Confirm all ${allSugg.length} faded shifts this week</button>` : ''}
     <button class="btn quiet tool" data-act="repeat-week" style="margin-top:8px">↻ Copy this week to next week</button>`;
   return h;
