@@ -675,6 +675,7 @@ function openSettings() {
     <p class="small muted" style="margin-top:6px">Pip comes in packs of 3 sensor tops and 10 inner plates, so one top can always be charging.</p>
     <div class="note small"><b>About this prototype.</b> Henry, Mom, Dad and Nan are a pretend family. No real baby, health or personal data is used. Everything stays on this device. The Pip device is played by the "Pretend to be the Pip device" strip.</div>
     <a class="btn secondary feedback" href="${FEEDBACK_URL}" target="_blank" rel="noopener">Give feedback (2 min)</a>
+    <a class="btn quiet" href="video/" target="_blank" rel="noopener">Watch the 2-minute demo video</a>
     <button class="btn quiet" data-act="sim">Open device simulator</button>
     <button class="btn quiet" data-act="reset">Reset demo data</button>
     <button class="btn primary" data-act="close">Done</button>`);
