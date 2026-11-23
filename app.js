@@ -378,7 +378,7 @@ function tapOrDouble(key, onSingle, onDouble) {
 
 function scheduleHTML() {
   const title = weekView ? weekTitle() : dayLabel(viewDay);
-  let h = `<div class="top"><div class="row" style="gap:4px">
+  let h = `<div class="top sched-top"><div class="row" style="gap:4px">
       <button class="navbtn" data-act="nav" data-d="-1" aria-label="Previous">‹</button>
       <h1 style="font-size:24px;min-width:0">${esc(title)}</h1>
       <button class="navbtn" data-act="nav" data-d="1" aria-label="Next">›</button></div>

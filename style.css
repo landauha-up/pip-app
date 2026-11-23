@@ -87,7 +87,7 @@ h2{font-size:21px}
 .seg{display:inline-flex;background:#f2f0ee;border-radius:999px;padding:3px}
 .seg button{padding:7px 14px;border-radius:999px;font-weight:700;font-size:13px;min-height:36px}
 .seg button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.tl{position:relative;display:flex;max-height:calc(100vh - 330px);min-height:300px;overflow-y:auto;overscroll-behavior:contain;background:#fff;border-radius:var(--r);overflow:hidden;margin-top:10px;user-select:none}
+.tl{position:relative;display:flex;max-height:calc(100vh - 330px);min-height:300px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;background:#fff;border-radius:var(--r);margin-top:10px;user-select:none;-webkit-overflow-scrolling:touch}
 .hours{width:52px;flex:none;border-right:1px solid var(--line)}
 .hours div{height:48px;font-size:11px;color:var(--taupe-text);padding:2px 6px 0 0;text-align:right}
 .grid{position:relative;flex:1;touch-action:pan-y;background:repeating-linear-gradient(#fff 0 47px,var(--line) 47px 48px)}
@@ -227,3 +227,9 @@ main{padding-bottom:130px}
 
 .strip .dflt{opacity:.45;background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.6) 0 4px,transparent 4px 8px)}
 .strip > div{white-space:nowrap;overflow:hidden}
+
+/* Schedule header (date, arrows, Day/Week) stays pinned while the page scrolls */
+.sched-top{position:sticky;top:-18px;z-index:6;background:var(--page);margin:-18px -18px 8px;padding:18px 18px 10px;box-shadow:0 1px 0 var(--line)}
+body.night .sched-top{background:#120a45}
+body.night .seg button.on{color:#0E004A}
+body.night .hours div{color:#c9c4ff}
