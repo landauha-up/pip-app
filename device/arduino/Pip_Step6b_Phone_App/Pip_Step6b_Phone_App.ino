@@ -14,9 +14,10 @@
 const unsigned long POOP_MS = 20000UL;      // how long gas has to stay high before I call it poop (20 seconds)
 const unsigned long PASS_MS = 90000UL;      // how long the alert waits for an answer before it goes to the next person (90 seconds)
 const bool NEED_MOISTURE_TOO = false;       // false = gas alone can mean poop, true = poop needs gas AND moisture
-const int GAS_RISE = 30;                    // how far the gas number has to climb above clean air to count as gas
+const int GAS_RISE = 50;                    // how far the gas number has to climb above clean air to count as gas
 const int WET_CHANGE = 100;                 // how far the moisture number has to move from dry to count as wet
 const unsigned long WARMUP_MS = 90000UL;    // how long I let the gas sensor heat up before Pip starts watching (90 seconds)
+const unsigned long REARM_MS = 15000UL;     // after "Diaper changed", how long I give myself to move the sanitizer away and wipe the probe (15 seconds)
 const char* BABY = "Henry";                 // the baby's name in my scenario
 const char* WIFI_NAME = "Pip";              // the Wi-Fi network name my phone will see
 const char* WIFI_PASS = "pipdemo123";       // the Wi-Fi password (has to be at least 8 characters)
@@ -42,7 +43,7 @@ int gasBase = 0;                            // the gas reading in clean air, sav
 int wet = 0;                                // the newest moisture reading (about 1015 when dry, drops when wet)
 int wetBase = 0;                            // the moisture reading when dry, saved after warm-up
 bool ready = false;                         // false while warming up, true once Pip is watching
-bool armed = true;                          // false right after a change, until the air is clean and the probe is dry again
+bool armed = true;                          // false for a few seconds right after a change, then Pip relearns clean air and watches again
 bool gasOn = false;                         // true while the yellow gas heads-up is on
 bool wetOn = false;                         // true while the blue moisture heads-up is on
 bool poop = false;                          // true once Pip has decided it is poop (red is on)
@@ -51,7 +52,7 @@ bool fakeWet = false;                       // true after I type w (or tap Fake 
 unsigned long gasStart = 0;                 // the time the gas first went high, to count toward the poop decision
 unsigned long alertStart = 0;               // the time the current person got the red alert, for the pass-on timer
 unsigned long lastLine = 0;                 // the time I last printed the status line, so it prints once a second
-unsigned long lastChangeAt = 0;             // the time of the last diaper change, for "last change" in the app
+unsigned long lastChangeAt = 0;             // the time of the last diaper change, for "last change" and the restart countdown
 String lastChangeBy = "";                   // who did the last change ("" = no change yet)
 int changesToday = 0;                       // how many changes since I turned Pip on
 String lastMsg = "Pip is warming up";       // the newest status message, shown in the app
@@ -122,11 +123,11 @@ void diaperChanged() {                      // what happens when someone presses
   wetOn = false;                            // moisture heads-up cleared
   fakeGas = false;                          // turn off my fake gas
   fakeWet = false;                          // turn off my fake moisture
-  armed = false;                            // wait for clean air and a dry probe before watching again
+  armed = false;                            // pause for a few seconds, then relearn clean air (see the loop)
   lastChangeAt = millis();                  // remember when
   lastChangeBy = who;                       // remember who
   changesToday++;                           // add one to today's count
-  note("Diaper changed by " + who + ". Alerts off, waiting for clean air before watching again");  // tell everyone
+  note("Diaper changed by " + who + ". Alerts off. Pip starts watching again in " + String(REARM_MS / 1000) + " seconds");  // tell everyone
 }                                           // end of diaperChanged()
 
 void doAction(char c) {                     // one place for every action, from the Serial Monitor or the app
@@ -181,7 +182,7 @@ var card=document.getElementById("card"),t="",s="",alert=false;
 if(!d.ready){t="Pip is warming up";s=d.warm+" seconds until Pip starts watching "+d.baby;}
 else if(d.alerted==4){t="Everyone alerted";s=d.baby+" needs a change and nobody has answered yet";alert=true;}
 else if(d.alerted>0){t=d.alerted==1?d.baby+" needs a change":"Sent to "+names[d.alerted];s=d.alerted==1?"Poop sensed. You're on duty.":names[d.alerted]+" has the alert now. You can still mark it changed.";alert=true;}
-else if(!d.armed){t="Changed";s="Pip will start watching again once the air is clean";}
+else if(!d.armed){t="Changed";s="Move the sanitizer away and wipe the probe. Pip starts watching again in a few seconds";}
 else if(d.gasOn&&d.wetOn){t="Gas and moisture sensed";s="Waiting a few seconds to see if this is just passing gas";}
 else if(d.gasOn){t="Gas sensed";s="Waiting a few seconds to see if this is just passing gas";}
 else if(d.wetOn){t="Moisture sensed";s=d.baby+"'s diaper is a little wet";}
@@ -294,11 +295,14 @@ void loop() {                               // start of loop
     bool wetLow = !fakeWet && abs(wet - wetBase) < WET_CHANGE / 2;  // the probe is close to dry again
 
     if (!armed) {                           // right after a change
-      if (gasLow && wetLow) {               // once the air is clean and the probe is dry
-        armed = true;                       // start watching again
-        note(String(NAMES[ON_DUTY]) + ": Pip is watching again");  // tell the on-duty person
-      }                                     // end of the clean-and-dry check
+      if (millis() - lastChangeAt >= REARM_MS) {  // once the pause is over (sanitizer moved, probe wiped)
+        gasBase = gas;                      // relearn clean air from right now, so leftover smell does not count
+        wetBase = wet;                      // relearn dry from right now
+        armed = true;                       // start watching again, no reset button needed
+        note(String(NAMES[ON_DUTY]) + ": Pip is watching again. New clean air gas = " + String(gasBase));  // tell the on-duty person
+      }                                     // end of the pause check
     } else if (!poop) {                     // watching, and no poop yet
+      if (!gasOn && !fakeGas && gas < gasBase) gasBase = gas;  // if the air keeps getting cleaner, follow it down so Pip stays sensitive
       if (!gasOn && gasHigh) {              // gas just went high
         gasOn = true;                       // remember the gas heads-up is on
         gasStart = millis();                // start counting toward the poop decision
